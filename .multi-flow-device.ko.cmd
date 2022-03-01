@@ -1,0 +1,1 @@
+cmd_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.ko := ld -r -m elf_x86_64  -z max-page-size=0x200000  --build-id  -T ./scripts/module-common.lds -o /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.ko /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.mod.o;  true

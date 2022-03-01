@@ -1,0 +1,1 @@
+cmd_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.mod := { echo  /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o;  echo; } > /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.mod
