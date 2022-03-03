@@ -43,6 +43,8 @@ typedef struct _object_state{
 	char * low_prior_stream_content;//the I/O node is a buffer in memory
   char * high_prior_stream_content;//the I/O node is a buffer in memory
   bool is_in_high_prior;
+  bool blocking;
+  unsigned long timeout;
 } object_state;
 
 #define MINORS 128
@@ -103,7 +105,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 	 return -ENOSR;//out of stream resources
   } 
   if((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
-  ret = copy_from_user(&(the_object->stream_content[*off]),buff,len);
+  
+  if (the_object -> is_in_high_prior){
+    ret = copy_from_user(&(the_object->high_prior_stream_content[*off]),buff,len);
+  }else{
+    ret = copy_from_user(&(the_object->low_prior_stream_content[*off]),buff,len);
+  }
   
   *off += (len - ret);
   if (the_object -> is_in_high_prior){
@@ -129,12 +136,20 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
 
   //need to lock in any case
   mutex_lock(&(the_object->operation_synchronizer));
-  if(*off > the_object->valid_bytes) {
+  if(the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior)) {
  	 mutex_unlock(&(the_object->operation_synchronizer));
 	 return 0;
   } 
-  if((the_object->valid_bytes - *off) < len) len = the_object->valid_bytes - *off;
-  ret = copy_to_user(buff,&(the_object->stream_content[*off]),len);
+  if((the_object->high_prior_valid_bytes - *off) < len && the_object -> is_in_high_prior) len = the_object->high_prior_valid_bytes - *off;
+  
+  if((the_object->low_prior_valid_bytes - *off) < len && !the_object -> is_in_high_prior) len = the_object->low_prior_valid_bytes - *off;
+  
+  if (the_object -> is_in_high_prior){
+     ret = copy_to_user(buff,&(the_object->high_prior_stream_content[*off]),len);
+  }else{
+     ret = copy_to_user(buff,&(the_object->low_prior_stream_content[*off]),len);
+  }
+ 
   
   *off += (len - ret);
   mutex_unlock(&(the_object->operation_synchronizer));
@@ -151,6 +166,17 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
   the_object = objects + minor;
   printk("%s: somebody called an ioctl on dev with [major,minor] number [%d,%d] and command %u \n",MODNAME,get_major(filp),get_minor(filp),command);
 
+  if (command == 0){
+    the_object -> is_in_high_prior = false;
+  }else if (command == 1){
+    the_object -> is_in_high_prior = true;
+  }else if(command == 2){
+    the_object -> blocking = true;
+  }
+
+  if (param != NULL) {
+    the_object -> timeout = param;
+  }
   //do here whathever you would like to control the state of the device
   return 0;
 
@@ -175,6 +201,8 @@ int init_module(void) {
 	for(i=0;i<MINORS;i++){
 
 		mutex_init(&(objects[i].operation_synchronizer));
+    objects[i].blocking = false;
+    objects[i].timeout = 0L;
 		objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
 		objects[i].low_prior_stream_content = NULL;
