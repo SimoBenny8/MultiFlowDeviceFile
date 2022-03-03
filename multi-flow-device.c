@@ -19,14 +19,11 @@ MODULE_AUTHOR("Simone Benedetti");
 
 #define MODNAME "MULTI FLOW DEVICE"
 
-
-
 static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
 #define DEVICE_NAME "multiflowdev"  /* Device file name in /dev/ - not mandatory  */
-//#define SINGLE_SESSION_OBJECT //just one session per I/O node at a time
 
 
 static int Major;            /* Major number assigned to broadcast device driver */
@@ -39,17 +36,19 @@ static int Major;            /* Major number assigned to broadcast device driver
 #define get_minor(session)	MINOR(session->f_dentry->d_inode->i_rdev)
 #endif
 
-
-
-
 typedef struct _object_state{
-	struct mutex operation_synchronizer;
-	int valid_bytes;
-	char * stream_content;//the I/O node is a buffer in memory
+	struct mutex operation_synchronizer; //TODO: da sistemare in base alla priorità (se semaforo o spinlock)
+	int low_prior_valid_bytes;
+  int high_prior_valid_bytes;
+	char * low_prior_stream_content;//the I/O node is a buffer in memory
+  char * high_prior_stream_content;//the I/O node is a buffer in memory
+  bool is_in_high_prior;
 } object_state;
 
 #define MINORS 128
+
 object_state objects[MINORS];
+
 
 #define OBJECT_MAX_SIZE  (4096) //just one page
 
@@ -63,31 +62,10 @@ static int dev_open(struct inode *inode, struct file *file) {
    if(minor >= MINORS){
 	return -ENODEV;
    }
-#ifdef SINGLE_INSTANCE
-// this device file is single instance
-   if (!mutex_trylock(&device_state)) {
-		return -EBUSY;
-   }
-#endif
-
-#ifdef SINGLE_SESSION_OBJECT
-   if (!mutex_trylock(&(objects[minor].object_busy))) {
-		goto open_failure;
-   }
-#endif
 
    printk("%s: device file successfully opened for object with minor %d\n",MODNAME,minor);
-//device opened by a default nop
+   //device opened by a default nop
    return 0;
-
-
-#ifdef SINGLE_SESSION_OBJECT
-open_failure:
-#ifdef SINGE_INSTANCE
-   mutex_unlock(&device_state);
-#endif
-   return -EBUSY;
-#endif
 
 }
 
@@ -96,14 +74,6 @@ static int dev_release(struct inode *inode, struct file *file) {
 
   int minor;
   minor = get_minor(file);
-
-#ifdef SINGLE_SESSION_OBJECT
-   mutex_unlock(&(objects[minor].object_busy));
-#endif
-
-#ifdef SINGLE_INSTANCE
-   mutex_unlock(&device_state);
-#endif
 
    printk("%s: device file closed\n",MODNAME);
 //device closed by default nop
@@ -128,7 +98,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
  	 mutex_unlock(&(the_object->operation_synchronizer));
 	 return -ENOSPC;//no space left on device
   } 
-  if(*off > the_object->valid_bytes) {//offset bwyond the current stream size
+  if(*off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes) {//offset beyond the current stream size
  	 mutex_unlock(&(the_object->operation_synchronizer));
 	 return -ENOSR;//out of stream resources
   } 
@@ -136,7 +106,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   ret = copy_from_user(&(the_object->stream_content[*off]),buff,len);
   
   *off += (len - ret);
-  the_object->valid_bytes = *off;
+  if (the_object -> is_in_high_prior){
+    the_object->high_prior_valid_bytes = *off;
+  }else{
+    the_object->low_prior_valid_bytes = *off;
+  }
+  
   mutex_unlock(&(the_object->operation_synchronizer));
 
   return len - ret;
@@ -165,9 +140,6 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
   mutex_unlock(&(the_object->operation_synchronizer));
 
   return len - ret;
-   printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
-
-  return 0;
 
 }
 
@@ -201,19 +173,21 @@ int init_module(void) {
 
 	//initialize the drive internal state
 	for(i=0;i<MINORS;i++){
-#ifdef SINGLE_SESSION_OBJECT
-		mutex_init(&(objects[i].object_busy));
-#endif
+
 		mutex_init(&(objects[i].operation_synchronizer));
-		objects[i].valid_bytes = 0;
-		objects[i].stream_content = NULL;
-		objects[i].stream_content = (char*)__get_free_page(GFP_KERNEL);
-		if(objects[i].stream_content == NULL) goto revert_allocation;
+		objects[i].low_prior_valid_bytes = 0;
+    objects[i].high_prior_valid_bytes = 0;
+		objects[i].low_prior_stream_content = NULL;
+		objects[i].low_prior_stream_content = (char*)__get_free_page(GFP_KERNEL);
+    objects[i].high_prior_stream_content = NULL;
+		objects[i].high_prior_stream_content = (char*)__get_free_page(GFP_KERNEL);
+		if(objects[i].high_prior_stream_content == NULL || objects[i].low_prior_stream_content == NULL) goto revert_allocation;
+    
 
 
 	}
 
-	Major = __register_chrdev(0, 0, 256, DEVICE_NAME, &fops);
+	Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
 	//actually allowed minors are directly controlled within this driver
 
 	if (Major < 0) {
@@ -227,7 +201,8 @@ int init_module(void) {
 
 revert_allocation:
 	for(;i>=0;i--){
-		free_page((unsigned long)objects[i].stream_content);
+    free_page((unsigned long)objects[i].low_prior_stream_content);
+		free_page((unsigned long)objects[i].high_prior_stream_content);
 	}
 	return -ENOMEM;
 }
