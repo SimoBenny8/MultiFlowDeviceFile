@@ -15,9 +15,9 @@
 
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Francesco Quaglia");
+MODULE_AUTHOR("Simone Benedetti");
 
-#define MODNAME "CHAR DEV"
+#define MODNAME "MULTI FLOW DEVICE"
 
 
 
@@ -25,10 +25,8 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 
-#define DEVICE_NAME "my-new-dev"  /* Device file name in /dev/ - not mandatory  */
-
-//#define SINGLE_INSTANCE //just one session at a time across all I/O node 
-#define SINGLE_SESSION_OBJECT //just one session per I/O node at a time
+#define DEVICE_NAME "multiflowdev"  /* Device file name in /dev/ - not mandatory  */
+//#define SINGLE_SESSION_OBJECT //just one session per I/O node at a time
 
 
 static int Major;            /* Major number assigned to broadcast device driver */
@@ -41,22 +39,16 @@ static int Major;            /* Major number assigned to broadcast device driver
 #define get_minor(session)	MINOR(session->f_dentry->d_inode->i_rdev)
 #endif
 
-#ifdef SINGLE_INSTANCE
-static DEFINE_MUTEX(device_state);
-#endif
+
 
 
 typedef struct _object_state{
-#ifdef SINGLE_SESSION_OBJECT
-	struct mutex object_busy;
-#endif
 	struct mutex operation_synchronizer;
 	int valid_bytes;
 	char * stream_content;//the I/O node is a buffer in memory
-
 } object_state;
 
-#define MINORS 8
+#define MINORS 128
 object_state objects[MINORS];
 
 #define OBJECT_MAX_SIZE  (4096) //just one page
