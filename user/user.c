@@ -20,13 +20,15 @@ void * the_thread(void* path){
 	sleep(1);
 
 	printf("opening device %s\n",device);
-	fd = open(device,O_RDWR);
+	fd = open(device,O_RDWR|O_APPEND);
 	if(fd == -1) {
 		printf("open error on device %s\n",device);
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	ioctl(fd,1);
+	ioctl(fd,0);
+	//ioctl(fd,2);
+	//ioctl(fd,3,3000);
 	for(i=0;i<1000;i++) write(fd,DATA,SIZE);
 	return NULL;
 

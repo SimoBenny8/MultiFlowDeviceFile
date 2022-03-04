@@ -31,9 +31,9 @@ __used __section(__versions) = {
 	{ 0x6a5cb5ee, "__get_free_pages" },
 	{ 0x362ef408, "_copy_from_user" },
 	{ 0x36e58bcd, "pv_ops" },
+	{ 0x8c3253ec, "_raw_spin_trylock" },
 	{ 0xb44ad4b3, "_copy_to_user" },
 	{ 0x88db9f48, "__check_object_size" },
-	{ 0x8c3253ec, "_raw_spin_trylock" },
 	{ 0xdbf17652, "_raw_spin_lock" },
 	{ 0x56470118, "__warn_printk" },
 	{ 0xc5850110, "printk" },
@@ -43,4 +43,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "82B776ED3C8663130A2C99E");
+MODULE_INFO(srcversion, "B093EAF6695CDF1B6A05140");
