@@ -12,19 +12,13 @@
 #include <linux/pid.h>		/* For pid types */
 #include <linux/tty.h>		/* For the tty declarations */
 #include <linux/version.h>	/* For LINUX_VERSION_CODE */
-
+#include <linux/spinlock.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Simone Benedetti");
 
 #define MODNAME "MULTI FLOW DEVICE"
-
-static int dev_open(struct inode *, struct file *);
-static int dev_release(struct inode *, struct file *);
-static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
-
 #define DEVICE_NAME "multiflowdev"  /* Device file name in /dev/ - not mandatory  */
-
 
 static int Major;            /* Major number assigned to broadcast device driver */
 
@@ -38,6 +32,7 @@ static int Major;            /* Major number assigned to broadcast device driver
 
 typedef struct _object_state{
 	struct mutex operation_synchronizer; //TODO: da sistemare in base alla priorità (se semaforo o spinlock)
+  spinlock_t queue_lock; //non blocking
 	int low_prior_valid_bytes;
   int high_prior_valid_bytes;
 	char * low_prior_stream_content;//the I/O node is a buffer in memory
@@ -94,6 +89,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   the_object = objects + minor;
   printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
+if the_object -> blocking{
+
   //need to lock in any case
   mutex_lock(&(the_object->operation_synchronizer));
   if(*off >= OBJECT_MAX_SIZE) {//offset too large
@@ -113,6 +110,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   }
   
   *off += (len - ret);
+  
   if (the_object -> is_in_high_prior){
     the_object->high_prior_valid_bytes = *off;
   }else{
@@ -120,6 +118,37 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   }
   
   mutex_unlock(&(the_object->operation_synchronizer));
+}else{
+  //TODO: non blocking case
+  //need to lock in any case
+  spin_lock(&(the_object->queue_lock));
+  if(*off >= OBJECT_MAX_SIZE) {//offset too large
+ 	 spin_unlock(&(the_object->queue_lock));
+	 return -ENOSPC;//no space left on device
+  } 
+  if(*off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes) {//offset beyond the current stream size
+ 	 spin_unlock(&(the_object->queue_lock));
+	 return -ENOSR;//out of stream resources
+  } 
+  if((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
+  
+  if (the_object -> is_in_high_prior){
+    ret = copy_from_user(&(the_object->high_prior_stream_content[*off]),buff,len);
+  }else{
+    ret = copy_from_user(&(the_object->low_prior_stream_content[*off]),buff,len);
+  }
+  
+  *off += (len - ret);
+  
+  if (the_object -> is_in_high_prior){
+    the_object->high_prior_valid_bytes = *off;
+  }else{
+    the_object->low_prior_valid_bytes = *off;
+  }
+  
+  spin_unlock(&(the_object->queue_lock));
+
+}
 
   return len - ret;
 
@@ -134,6 +163,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
   the_object = objects + minor;
   printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
+if the_object -> blocking{
   //need to lock in any case
   mutex_lock(&(the_object->operation_synchronizer));
   if(the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior)) {
@@ -153,6 +183,28 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
   
   *off += (len - ret);
   mutex_unlock(&(the_object->operation_synchronizer));
+}else{
+  //TODO: non blocking case -> caso con try-lock
+  spin_lock(&(the_object->queue_lock)); 
+  if(the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior)) {
+ 	 spin_unlock(&(the_object->queue_lock));
+	 return 0;
+  } 
+  if((the_object->high_prior_valid_bytes - *off) < len && the_object -> is_in_high_prior) len = the_object->high_prior_valid_bytes - *off;
+  
+  if((the_object->low_prior_valid_bytes - *off) < len && !the_object -> is_in_high_prior) len = the_object->low_prior_valid_bytes - *off;
+  
+  if (the_object -> is_in_high_prior){
+     ret = copy_to_user(buff,&(the_object->high_prior_stream_content[*off]),len);
+  }else{
+     ret = copy_to_user(buff,&(the_object->low_prior_stream_content[*off]),len);
+  }
+ 
+  
+  *off += (len - ret);
+  spin_unlock(&(the_object->queue_lock));
+
+}
 
   return len - ret;
 
@@ -201,6 +253,7 @@ int init_module(void) {
 	for(i=0;i<MINORS;i++){
 
 		mutex_init(&(objects[i].operation_synchronizer));
+    objects[i].queue_lock = SPINLOCK_UNLOCKED;
     objects[i].blocking = false;
     objects[i].timeout = 0L;
 		objects[i].low_prior_valid_bytes = 0;
@@ -211,8 +264,6 @@ int init_module(void) {
 		objects[i].high_prior_stream_content = (char*)__get_free_page(GFP_KERNEL);
 		if(objects[i].high_prior_stream_content == NULL || objects[i].low_prior_stream_content == NULL) goto revert_allocation;
     
-
-
 	}
 
 	Major = __register_chrdev(0, 0, 128, DEVICE_NAME, &fops);
@@ -239,7 +290,8 @@ void cleanup_module(void) {
 
 	int i;
 	for(i=0;i<MINORS;i++){
-		free_page((unsigned long)objects[i].stream_content);
+		free_page((unsigned long)objects[i].low_prior_stream_content);
+		free_page((unsigned long)objects[i].high_prior_stream_content);
 	}
 
 	unregister_chrdev(Major, DEVICE_NAME);
