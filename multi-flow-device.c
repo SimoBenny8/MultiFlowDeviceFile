@@ -89,7 +89,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   the_object = objects + minor;
   printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-if the_object -> blocking{
+if (the_object -> blocking){
 
   //need to lock in any case
   mutex_lock(&(the_object->operation_synchronizer));
@@ -118,6 +118,8 @@ if the_object -> blocking{
   }
   
   mutex_unlock(&(the_object->operation_synchronizer));
+  return len - ret;
+
 }else{
   //TODO: non blocking case
   //need to lock in any case
@@ -148,10 +150,12 @@ if the_object -> blocking{
   
   spin_unlock(&(the_object->queue_lock));
 
-}
-
   return len - ret;
 
+}
+
+  
+  return -1;
 }
 
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
@@ -163,7 +167,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
   the_object = objects + minor;
   printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-if the_object -> blocking{
+if (the_object -> blocking){
   //need to lock in any case
   mutex_lock(&(the_object->operation_synchronizer));
   if(the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior)) {
@@ -183,6 +187,8 @@ if the_object -> blocking{
   
   *off += (len - ret);
   mutex_unlock(&(the_object->operation_synchronizer));
+  return len - ret;
+
 }else{
   //TODO: non blocking case -> caso con try-lock
   spin_lock(&(the_object->queue_lock)); 
@@ -203,10 +209,11 @@ if the_object -> blocking{
   
   *off += (len - ret);
   spin_unlock(&(the_object->queue_lock));
+  return len - ret;
 
 }
 
-  return len - ret;
+  return -1;
 
 }
 
@@ -253,7 +260,7 @@ int init_module(void) {
 	for(i=0;i<MINORS;i++){
 
 		mutex_init(&(objects[i].operation_synchronizer));
-    objects[i].queue_lock = SPINLOCK_UNLOCKED;
+    objects[i].queue_lock = __SPIN_LOCK_UNLOCKED;
     objects[i].blocking = false;
     objects[i].timeout = 0L;
 		objects[i].low_prior_valid_bytes = 0;
