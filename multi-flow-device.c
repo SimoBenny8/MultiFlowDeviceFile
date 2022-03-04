@@ -31,8 +31,7 @@ static int Major;            /* Major number assigned to broadcast device driver
 #endif
 
 typedef struct _object_state{
-	struct mutex operation_synchronizer; //TODO: da sistemare in base alla priorità (se semaforo o spinlock)
-  spinlock_t queue_lock; //non blocking
+  spinlock_t operation_synchronizer; 
 	int low_prior_valid_bytes;
   int high_prior_valid_bytes;
 	char * low_prior_stream_content;//the I/O node is a buffer in memory
@@ -57,7 +56,7 @@ static int dev_open(struct inode *inode, struct file *file) {
    minor = get_minor(file);
 
    if(minor >= MINORS){
-	return -ENODEV;
+	  return -ENODEV;
    }
 
    printk("%s: device file successfully opened for object with minor %d\n",MODNAME,minor);
@@ -72,9 +71,9 @@ static int dev_release(struct inode *inode, struct file *file) {
   int minor;
   minor = get_minor(file);
 
-   printk("%s: device file closed\n",MODNAME);
-//device closed by default nop
-   return 0;
+  printk("%s: device file closed\n",MODNAME);
+  //device closed by default nop
+  return 0;
 
 }
 
@@ -89,18 +88,21 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   the_object = objects + minor;
   printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-if (the_object -> blocking){
+  if (the_object -> blocking){
+    spin_lock(&(the_object->operation_synchronizer));
+  }else{
+    spin_try_lock(&(the_object->operation_synchronizer));  
+  }
 
-  //need to lock in any case
-  mutex_lock(&(the_object->operation_synchronizer));
   if(*off >= OBJECT_MAX_SIZE) {//offset too large
- 	 mutex_unlock(&(the_object->operation_synchronizer));
-	 return -ENOSPC;//no space left on device
+ 	  spin_unlock(&(the_object->operation_synchronizer));
+	  return -ENOSPC;//no space left on device
   } 
   if(*off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes) {//offset beyond the current stream size
- 	 mutex_unlock(&(the_object->operation_synchronizer));
-	 return -ENOSR;//out of stream resources
+ 	  spin_unlock(&(the_object->operation_synchronizer));
+	  return -ENOSR;//out of stream resources
   } 
+
   if((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
   
   if (the_object -> is_in_high_prior){
@@ -117,45 +119,8 @@ if (the_object -> blocking){
     the_object->low_prior_valid_bytes = *off;
   }
   
-  mutex_unlock(&(the_object->operation_synchronizer));
+  spin_unlock(&(the_object->operation_synchronizer));
   return len - ret;
-
-}else{
-  //TODO: non blocking case
-  //need to lock in any case
-  spin_lock(&(the_object->queue_lock));
-  if(*off >= OBJECT_MAX_SIZE) {//offset too large
- 	 spin_unlock(&(the_object->queue_lock));
-	 return -ENOSPC;//no space left on device
-  } 
-  if(*off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes) {//offset beyond the current stream size
- 	 spin_unlock(&(the_object->queue_lock));
-	 return -ENOSR;//out of stream resources
-  } 
-  if((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
-  
-  if (the_object -> is_in_high_prior){
-    ret = copy_from_user(&(the_object->high_prior_stream_content[*off]),buff,len);
-  }else{
-    ret = copy_from_user(&(the_object->low_prior_stream_content[*off]),buff,len);
-  }
-  
-  *off += (len - ret);
-  
-  if (the_object -> is_in_high_prior){
-    the_object->high_prior_valid_bytes = *off;
-  }else{
-    the_object->low_prior_valid_bytes = *off;
-  }
-  
-  spin_unlock(&(the_object->queue_lock));
-
-  return len - ret;
-
-}
-
-  
-  return -1;
 }
 
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) {
@@ -167,11 +132,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
   the_object = objects + minor;
   printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-if (the_object -> blocking){
-  //need to lock in any case
-  mutex_lock(&(the_object->operation_synchronizer));
-  if(the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior)) {
- 	 mutex_unlock(&(the_object->operation_synchronizer));
+  if (the_object -> blocking){
+    spin_lock(&(the_object->operation_synchronizer));
+  }else{
+    spin_try_lock(&(the_object->operation_synchronizer));  
+  }
+  if((the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes) || (*off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior))) {
+ 	 spin_unlock(&(the_object->operation_synchronizer));
 	 return 0;
   } 
   if((the_object->high_prior_valid_bytes - *off) < len && the_object -> is_in_high_prior) len = the_object->high_prior_valid_bytes - *off;
@@ -184,36 +151,9 @@ if (the_object -> blocking){
      ret = copy_to_user(buff,&(the_object->low_prior_stream_content[*off]),len);
   }
  
-  
   *off += (len - ret);
-  mutex_unlock(&(the_object->operation_synchronizer));
+  spin_unlock(&(the_object->operation_synchronizer));
   return len - ret;
-
-}else{
-  //TODO: non blocking case -> caso con try-lock
-  spin_lock(&(the_object->queue_lock)); 
-  if(the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior)) {
- 	 spin_unlock(&(the_object->queue_lock));
-	 return 0;
-  } 
-  if((the_object->high_prior_valid_bytes - *off) < len && the_object -> is_in_high_prior) len = the_object->high_prior_valid_bytes - *off;
-  
-  if((the_object->low_prior_valid_bytes - *off) < len && !the_object -> is_in_high_prior) len = the_object->low_prior_valid_bytes - *off;
-  
-  if (the_object -> is_in_high_prior){
-     ret = copy_to_user(buff,&(the_object->high_prior_stream_content[*off]),len);
-  }else{
-     ret = copy_to_user(buff,&(the_object->low_prior_stream_content[*off]),len);
-  }
- 
-  
-  *off += (len - ret);
-  spin_unlock(&(the_object->queue_lock));
-  return len - ret;
-
-}
-
-  return -1;
 
 }
 
@@ -236,7 +176,7 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
   if (param != NULL) {
     the_object -> timeout = param;
   }
-  //do here whathever you would like to control the state of the device
+  
   return 0;
 
 }
@@ -259,8 +199,7 @@ int init_module(void) {
 	//initialize the drive internal state
 	for(i=0;i<MINORS;i++){
 
-		mutex_init(&(objects[i].operation_synchronizer));
-    objects[i].queue_lock = __SPIN_LOCK_UNLOCKED;
+    spin_lock_init(&(objects[i].operation_synchronizer));
     objects[i].blocking = false;
     objects[i].timeout = 0L;
 		objects[i].low_prior_valid_bytes = 0;

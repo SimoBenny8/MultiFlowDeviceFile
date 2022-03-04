@@ -30,11 +30,14 @@ __used __section(__versions) = {
 	{ 0x4302d0eb, "free_pages" },
 	{ 0x6a5cb5ee, "__get_free_pages" },
 	{ 0x977f511b, "__mutex_init" },
-	{ 0x362ef408, "_copy_from_user" },
-	{ 0x409bcb62, "mutex_unlock" },
 	{ 0xb44ad4b3, "_copy_to_user" },
+	{ 0x36e58bcd, "pv_ops" },
+	{ 0xdbf17652, "_raw_spin_lock" },
+	{ 0x409bcb62, "mutex_unlock" },
+	{ 0x362ef408, "_copy_from_user" },
 	{ 0x88db9f48, "__check_object_size" },
 	{ 0x2ab7989d, "mutex_lock" },
+	{ 0x56470118, "__warn_printk" },
 	{ 0xc5850110, "printk" },
 	{ 0xbdfb6dbb, "__fentry__" },
 };
@@ -42,4 +45,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "FC413A328871F6498A1C1FF");
+MODULE_INFO(srcversion, "A06A6F4E4DFD86FEDF95DC0");
