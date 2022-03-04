@@ -109,8 +109,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     return -ENOSR; // out of stream resources
   }
 
-  if ((OBJECT_MAX_SIZE - *off) < len)
-    len = OBJECT_MAX_SIZE - *off;
+  if ((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
 
   if (the_object->is_in_high_prior)
   {
