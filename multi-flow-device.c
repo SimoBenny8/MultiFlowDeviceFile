@@ -1,6 +1,6 @@
 
 /*  
- *  baseline char device driver with limitation on minor numbers - configurable in terms of concurrency 
+ *  multi-flow device driver with limitation on minor numbers 
  */
 
 #define EXPORT_SYMTAB
@@ -34,7 +34,7 @@ typedef struct _object_state{
   spinlock_t operation_synchronizer; 
 	int low_prior_valid_bytes;
   int high_prior_valid_bytes;
-	char * low_prior_stream_content;//the I/O node is a buffer in memory
+	char * low_prior_stream_content;
   char * high_prior_stream_content;//the I/O node is a buffer in memory
   bool is_in_high_prior;
   bool blocking;
@@ -91,7 +91,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (the_object -> blocking){
     spin_lock(&(the_object->operation_synchronizer));
   }else{
-    spin_try_lock(&(the_object->operation_synchronizer));  
+    spin_trylock(&(the_object->operation_synchronizer));  
   }
 
   if(*off >= OBJECT_MAX_SIZE) {//offset too large
@@ -135,7 +135,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off) 
   if (the_object -> blocking){
     spin_lock(&(the_object->operation_synchronizer));
   }else{
-    spin_try_lock(&(the_object->operation_synchronizer));  
+    spin_trylock(&(the_object->operation_synchronizer));  
   }
   if((the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes) || (*off > the_object->low_prior_valid_bytes && !(the_object -> is_in_high_prior))) {
  	 spin_unlock(&(the_object->operation_synchronizer));
