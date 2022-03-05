@@ -8,9 +8,9 @@
 */
 #define IOCTL_APP_TYPE 80
 
-#define HP_NB _IORW(IOCTL_APP_TYPE,1,unsigned long)
-#define HP_B _IORw(IOCTL_APP_TYPE,2,unsigned long)
-#define LP_NB _IORW(IOCTL_APP_TYPE,3,unsigned long)
-#define LP_B _IORw(IOCTL_APP_TYPE,4,unsigned long)
+#define HP_NB _IOWR(IOCTL_APP_TYPE,1,int32_t*)
+#define HP_B _IOWR(IOCTL_APP_TYPE,2,int32_t*)
+#define LP_NB _IOWR(IOCTL_APP_TYPE,3,int32_t*)
+#define LP_B _IOWR(IOCTL_APP_TYPE,4,int32_t*)
 
 #endif

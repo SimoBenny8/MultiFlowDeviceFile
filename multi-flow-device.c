@@ -36,13 +36,12 @@ static int Major; /* Major number assigned to broadcast device driver */
 typedef struct _object_state
 {
   spinlock_t operation_synchronizer;
-  int low_prior_valid_bytes;
-  int high_prior_valid_bytes;
+  int valid_bytes;
   char *low_prior_stream_content;
   char *high_prior_stream_content; // the I/O node is a buffer in memory
   int is_in_high_prior;
   int blocking;
-  unsigned long timeout;
+  int32_t timeout;
 } object_state;
 
 #define MINORS 8
@@ -106,7 +105,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     spin_unlock(&(the_object->operation_synchronizer));
     return -ENOSPC; // no space left on device
   }
-  if (*off > the_object->high_prior_valid_bytes || *off > the_object->low_prior_valid_bytes)
+  if (*off > the_object->valid_bytes)
   { // offset beyond the current stream size
     spin_unlock(&(the_object->operation_synchronizer));
     return -ENOSR; // out of stream resources
@@ -125,14 +124,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   *off += (len - ret);
 
-  if (the_object->is_in_high_prior)
-  {
-    the_object->high_prior_valid_bytes = *off;
-  }
-  else
-  {
-    the_object->low_prior_valid_bytes = *off;
-  }
+
+  the_object->valid_bytes = *off;
+  
 
   spin_unlock(&(the_object->operation_synchronizer));
   return len - ret;
@@ -156,21 +150,19 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     spin_trylock(&(the_object->operation_synchronizer));
   }
-  if ((the_object->is_in_high_prior && *off > the_object->high_prior_valid_bytes) || (*off > the_object->low_prior_valid_bytes && !(the_object->is_in_high_prior)))
+  if (*off > the_object->valid_bytes)
   {
     spin_unlock(&(the_object->operation_synchronizer));
     return 0;
   }
-  if ((the_object->high_prior_valid_bytes - *off) < len && the_object->is_in_high_prior)
-    len = the_object->high_prior_valid_bytes - *off;
 
-  if ((the_object->low_prior_valid_bytes - *off) < len && !the_object->is_in_high_prior)
-    len = the_object->low_prior_valid_bytes - *off;
+  if ((the_object->valid_bytes - *off) < len)
+    len = the_object->valid_bytes - *off;
 
   if (the_object->is_in_high_prior)
   {
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
-    the_object->high_prior_stream_content[0] = the_object->high_prior_stream_content[*off + ret];
+    the_object->high_prior_stream_content[0] = the_object->high_prior_stream_content[*off + ret]; //prova cancellazione contenuto
   }
   else
   {
@@ -197,28 +189,28 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
   case HP_B:
     the_object->is_in_high_prior = 1;
     the_object->blocking = 1;
-    the_object->timeout = param;
+    the_object->timeout = (int32_t) param;
     printk("Inserimento parametri effettuato\n");
     break;
 
   case HP_NB:
     the_object->is_in_high_prior = 1;
     the_object->blocking = 0;
-    the_object->timeout = param;
+    the_object->timeout = (int32_t) param;
     printk("Inserimento parametri effettuato\n");
     break;
   
    case LP_NB:
     the_object->is_in_high_prior = 0;
     the_object->blocking = 0;
-    the_object->timeout = param;
+    the_object->timeout = (int32_t) param;
     printk("Inserimento parametri effettuato\n");
     break;
   
    case LP_B:
     the_object->is_in_high_prior = 0;
     the_object->blocking = 1;
-    the_object->timeout = param;
+    the_object->timeout = (int32_t) param;
     printk("Inserimento parametri effettuato\n");
     break;
   
@@ -248,8 +240,7 @@ int init_module(void)
     spin_lock_init(&(objects[i].operation_synchronizer));
     objects[i].blocking = 0;
     objects[i].timeout = 0;
-    objects[i].low_prior_valid_bytes = 0;
-    objects[i].high_prior_valid_bytes = 0;
+    objects[i].valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;
     objects[i].low_prior_stream_content = (char *)__get_free_page(GFP_KERNEL);
     objects[i].high_prior_stream_content = NULL;

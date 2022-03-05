@@ -26,12 +26,12 @@ static const struct modversion_info ____versions[]
 __used __section(__versions) = {
 	{ 0xb3753869, "module_layout" },
 	{ 0x6bc3fbc0, "__unregister_chrdev" },
-	{ 0xe6278ff5, "__register_chrdev" },
 	{ 0x4302d0eb, "free_pages" },
+	{ 0xe6278ff5, "__register_chrdev" },
 	{ 0x6a5cb5ee, "__get_free_pages" },
 	{ 0x362ef408, "_copy_from_user" },
-	{ 0x36e58bcd, "pv_ops" },
 	{ 0x8c3253ec, "_raw_spin_trylock" },
+	{ 0x36e58bcd, "pv_ops" },
 	{ 0xb44ad4b3, "_copy_to_user" },
 	{ 0x88db9f48, "__check_object_size" },
 	{ 0xdbf17652, "_raw_spin_lock" },
@@ -43,4 +43,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "76EAE2CCAE150D697BFECA0");
+MODULE_INFO(srcversion, "80BB03B48CDB8FB2DAEB686");

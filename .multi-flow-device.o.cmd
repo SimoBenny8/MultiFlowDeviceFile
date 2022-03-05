@@ -913,6 +913,7 @@ deps_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o := \
   include/uapi/linux/tty_flags.h \
   include/uapi/linux/tty.h \
   include/generated/uapi/linux/version.h \
+  /home/simone/Documents/MultiFlowDeviceFile/ioctl.h \
 
 /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o: $(deps_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o)
 
