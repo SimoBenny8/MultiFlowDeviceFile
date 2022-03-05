@@ -13,6 +13,9 @@
 #include <linux/tty.h>     /* For the tty declarations */
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 #include <linux/spinlock.h>
+#include <linux/ioctl.h>
+
+#include "ioctl.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Simone Benedetti");
@@ -37,12 +40,12 @@ typedef struct _object_state
   int high_prior_valid_bytes;
   char *low_prior_stream_content;
   char *high_prior_stream_content; // the I/O node is a buffer in memory
-  bool is_in_high_prior;
-  bool blocking;
+  int is_in_high_prior;
+  int blocking;
   unsigned long timeout;
 } object_state;
 
-#define MINORS 128
+#define MINORS 8
 
 object_state objects[MINORS];
 
@@ -189,27 +192,38 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
   the_object = objects + minor;
   printk("%s: somebody called an ioctl on dev with [major,minor] number [%d,%d] and command %u \n", MODNAME, get_major(filp), get_minor(filp), command);
 
-  if (command == 0)
+  switch (command)
   {
-    the_object->is_in_high_prior = false;
-    printk("\n");
-  }
-
-  if (command == 1)
-  {
-    the_object->is_in_high_prior = true;
-    // TODO: mettere in una coda per dargli priorità
-  }
-
-  if (command == 2)
-  {
-    the_object->blocking = true;
-  }
-
-  if (command == 3 && param != NULL)
-  {
+  case HP_B:
+    the_object->is_in_high_prior = 1;
+    the_object->blocking = 1;
     the_object->timeout = param;
+    printk("Inserimento parametri effettuato\n");
+    break;
+
+  case HP_NB:
+    the_object->is_in_high_prior = 1;
+    the_object->blocking = 0;
+    the_object->timeout = param;
+    printk("Inserimento parametri effettuato\n");
+    break;
+  
+   case LP_NB:
+    the_object->is_in_high_prior = 0;
+    the_object->blocking = 0;
+    the_object->timeout = param;
+    printk("Inserimento parametri effettuato\n");
+    break;
+  
+   case LP_B:
+    the_object->is_in_high_prior = 0;
+    the_object->blocking = 1;
+    the_object->timeout = param;
+    printk("Inserimento parametri effettuato\n");
+    break;
+  
   }
+ 
 
   return 0;
 }
@@ -232,8 +246,8 @@ int init_module(void)
   {
 
     spin_lock_init(&(objects[i].operation_synchronizer));
-    objects[i].blocking = false;
-    objects[i].timeout = 0L;
+    objects[i].blocking = 0;
+    objects[i].timeout = 0;
     objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;

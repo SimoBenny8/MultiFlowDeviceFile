@@ -5,6 +5,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <sys/ioctl.h>
+#include "ioctl.h"
 
 int i;
 char buff[4096];
@@ -26,10 +27,8 @@ void * the_thread(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	ioctl(fd,0);
-	//ioctl(fd,2);
-	//ioctl(fd,3,3000);
-	for(i=0;i<1000;i++) write(fd,DATA,SIZE);
+	ioctl(fd,HP_B,300);
+	for(i=0;i<5;i++) write(fd,DATA,SIZE);
 	return NULL;
 
 }
