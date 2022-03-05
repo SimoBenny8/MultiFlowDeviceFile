@@ -36,7 +36,8 @@ static int Major; /* Major number assigned to broadcast device driver */
 typedef struct _object_state
 {
   struct mutex operation_synchronizer;
-  int valid_bytes;
+  int low_prior_valid_bytes;
+  int high_prior_valid_bytes;
   char *low_prior_stream_content;
   char *high_prior_stream_content; // the I/O node is a buffer in memory
   int is_in_high_prior;
@@ -107,7 +108,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     mutex_unlock(&(the_object->operation_synchronizer));
     return -ENOSPC; // no space left on device
   }
-  if (*off > the_object->valid_bytes)
+  if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   { // offset beyond the current stream size
     mutex_unlock(&(the_object->operation_synchronizer));
     return -ENOSR; // out of stream resources
@@ -126,8 +127,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   *off += (len - ret);
 
-
-  the_object->valid_bytes = *off;
+  if(the_object -> is_in_high_prior){
+    the_object->high_prior_valid_bytes = *off;
+  }else{
+    the_object->low_prior_valid_bytes = *off;
+  }
   
 
   mutex_unlock(&(the_object->operation_synchronizer));
@@ -154,14 +158,24 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       return -EBUSY;
     }
   }
-  if (*off > the_object->valid_bytes)
+  if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   {
     mutex_unlock(&(the_object->operation_synchronizer));
     return 0;
   }
 
-  if ((the_object->valid_bytes - *off) < len)
-    len = the_object->valid_bytes - *off;
+  if (((!the_object -> is_in_high_prior) && (the_object->low_prior_valid_bytes - *off) < len)){
+    
+    len = the_object->low_prior_valid_bytes - *off;
+
+  }else if ((the_object -> is_in_high_prior) && (the_object->high_prior_valid_bytes - *off) < len){
+
+    len = the_object->high_prior_valid_bytes - *off;
+
+  }
+    
+  
+
 
   if (the_object->is_in_high_prior)
   {
@@ -244,7 +258,8 @@ int init_module(void)
     mutex_init(&(objects[i].operation_synchronizer));
     objects[i].blocking = 0;
     objects[i].timeout = 0;
-    objects[i].valid_bytes = 0;
+    objects[i].low_prior_valid_bytes = 0;
+    objects[i].high_prior_valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;
     objects[i].low_prior_stream_content = (char *)__get_free_page(GFP_KERNEL);
     objects[i].high_prior_stream_content = NULL;
