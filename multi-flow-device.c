@@ -14,6 +14,9 @@
 #include <linux/version.h> /* For LINUX_VERSION_CODE */
 #include <linux/spinlock.h>
 #include <linux/ioctl.h>
+#include <linux/wait.h>
+#include <linux/jiffies.h>
+#include <linux/workqueue.h> 
 
 #include "ioctl.h"
 
@@ -25,6 +28,7 @@ MODULE_AUTHOR("Simone Benedetti");
 
 static int Major; /* Major number assigned to broadcast device driver */
 
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 #define get_major(session) MAJOR(session->f_inode->i_rdev)
 #define get_minor(session) MINOR(session->f_inode->i_rdev)
@@ -35,7 +39,11 @@ static int Major; /* Major number assigned to broadcast device driver */
 
 typedef struct _object_state
 {
-  struct mutex operation_synchronizer;
+  struct mutex hp_operation_synchronizer;
+  struct mutex lp_operation_synchronizer;
+  wait_queue_head_t hp_queue;
+  wait_queue_head_t lp_queue;
+  struct work_struct lp_workqueue;
   int low_prior_valid_bytes;
   int high_prior_valid_bytes;
   char *low_prior_stream_content;
@@ -43,6 +51,7 @@ typedef struct _object_state
   int is_in_high_prior;
   int blocking;
   int32_t timeout;
+  char flag;
 } object_state;
 
 #define MINORS 8
@@ -50,6 +59,15 @@ typedef struct _object_state
 object_state objects[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
+
+void workqueue_writefn(struct work_struct *work)
+{
+      //printk(KERN_INFO "Executing Workqueue Function\n");
+      object_state *device;
+      device = container_of(work,object_state,lp_workqueue);
+      //prendere lock e differenziare se bloccante o no
+      //fare funzione 
+}
 
 /* the actual driver */
 
@@ -79,25 +97,38 @@ static int dev_release(struct inode *inode, struct file *file)
   // device closed by default nop
   return 0;
 }
-
+//sincroni per hp e asincrono per lp
 static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t *off)
 {
 
   int minor = get_minor(filp);
   int ret;
+  int ret_mutex;
+  int prior;
   object_state *the_object;
+  unsigned long j;
 
+  j = jiffies;
   the_object = objects + minor;
+  prior = the_object ->is_in_high_prior;
   // printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-  if (the_object->blocking)
+  if (the_object->blocking && prior)
   {
-    mutex_lock(&(the_object->operation_synchronizer));
+    ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));
+
+    if (ret_mutex != 1){
+        wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (j + HZ)*(the_object -> timeout));
+    }else{
+        schedule_work(&(the_object -> lp_workqueue));
+        return 30; //scegliere codice di errore per questo caso
+        //TODO: deferred work
+    }
     printk("%s: somebody called a blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
   }
   else
   {
-    if(!mutex_trylock(&(the_object->operation_synchronizer))){
+    if(!mutex_trylock(&(the_object->lp_operation_synchronizer))){
       return -EBUSY;
     }
     printk("%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
@@ -173,9 +204,6 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     len = the_object->high_prior_valid_bytes - *off;
 
   }
-    
-  
-
 
   if (the_object->is_in_high_prior)
   {
@@ -244,20 +272,26 @@ static struct file_operations fops = {
     .read = dev_read,
     .open = dev_open,
     .release = dev_release,
-    .unlocked_ioctl = dev_ioctl};
+    .unlocked_ioctl = dev_ioctl
+};
 
 int init_module(void)
 {
 
   int i;
+  
 
   // initialize the drive internal state
   for (i = 0; i < MINORS; i++)
   {
 
     mutex_init(&(objects[i].operation_synchronizer));
+    init_waitqueue_head(&(objects[i].hp_queue));
+    init_waitqueue_head(&(objects[i].lp_queue));
+    INIT_WORK(&(objects[i].lp_workqueue),workqueue_writefn);
     objects[i].blocking = 0;
     objects[i].timeout = 0;
+    objects[i].flag = 'n';
     objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;
