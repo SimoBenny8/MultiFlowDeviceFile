@@ -72,7 +72,7 @@ object_state objects[MINORS];
 void workqueue_writefn(struct work_struct *work)
 {
       //printk(KERN_INFO "Executing Workqueue Function\n");
-      object_state *device;
+      packed_work *device;
       device = container_of(work,packed_work,the_work);
       //prendere lock e differenziare se bloccante o no
       //fare funzione 
@@ -116,7 +116,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int prior;
   unsigned long j;
   object_state *the_object;
-  packed_work packed_work_sched = {.filp = filp, .buff = buff, .len= len, .off = off, .the_work = the_object -> lp_workqueue};
+  packed_work* packed_work_sched;
+  packed_work_sched -> filp = filp; 
+  packed_work_sched -> buff = buff;
+  packed_work_sched -> len = len;
+  packed_work_sched -> off = off;
+  packed_work_sched -> the_work = the_object -> lp_workqueue;
   
 
   j = jiffies;
@@ -147,9 +152,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   }
 
   if(prior){
-    *off += the_object -> high_prior_valid_bytes
+    *off += the_object -> high_prior_valid_bytes;
   }else{
-    *off += the_object -> low_prior_valid_bytes
+    *off += the_object -> low_prior_valid_bytes;
   }
 
   if (*off >= OBJECT_MAX_SIZE)
