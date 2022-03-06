@@ -54,6 +54,15 @@ typedef struct _object_state
   char flag;
 } object_state;
 
+typedef struct _packed_work{
+        struct file *filp;
+        const char *buff;
+        size_t len; 
+        loff_t *off;
+        struct work_struct the_work;
+} packed_work;
+
+
 #define MINORS 8
 
 object_state objects[MINORS];
@@ -64,7 +73,7 @@ void workqueue_writefn(struct work_struct *work)
 {
       //printk(KERN_INFO "Executing Workqueue Function\n");
       object_state *device;
-      device = container_of(work,object_state,lp_workqueue);
+      device = container_of(work,packed_work,the_work);
       //prendere lock e differenziare se bloccante o no
       //fare funzione 
 }
@@ -105,24 +114,27 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int ret;
   int ret_mutex;
   int prior;
-  object_state *the_object;
   unsigned long j;
+  object_state *the_object;
+  packed_work packed_work_sched = {.filp = filp, .buff = buff, .len= len, .off = off, .the_work = the_object -> lp_workqueue};
+  
 
   j = jiffies;
   the_object = objects + minor;
   prior = the_object ->is_in_high_prior;
   // printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-  if (the_object->blocking && prior)
+  if (the_object->blocking && prior) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
   {
     ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));
 
     if (ret_mutex != 1){
         wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (j + HZ)*(the_object -> timeout));
     }else{
-        schedule_work(&(the_object -> lp_workqueue));
+        //caso deferred work
+        schedule_work(&(packed_work_sched -> the_work));
         return 30; //scegliere codice di errore per questo caso
-        //TODO: deferred work
+        
     }
     printk("%s: somebody called a blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
   }
@@ -132,6 +144,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       return -EBUSY;
     }
     printk("%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
+  }
+
+  if(prior){
+    *off += the_object -> high_prior_valid_bytes
+  }else{
+    *off += the_object -> low_prior_valid_bytes
   }
 
   if (*off >= OBJECT_MAX_SIZE)
@@ -158,7 +176,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   *off += (len - ret);
 
-  if(the_object -> is_in_high_prior){
+  if(prior){
     the_object->high_prior_valid_bytes = *off;
   }else{
     the_object->low_prior_valid_bytes = *off;
@@ -169,6 +187,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   return len - ret;
 }
 
+//sempre sincrone
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 {
 
