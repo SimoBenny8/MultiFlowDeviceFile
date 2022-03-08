@@ -45,7 +45,6 @@ typedef struct _object_state
   struct mutex hp_operation_synchronizer;
   wait_queue_head_t hp_queue;
   wait_queue_head_t lp_queue;
-  struct work_struct lp_work;
   int low_prior_valid_bytes;
   int high_prior_valid_bytes;
   char *low_prior_stream_content;
@@ -71,14 +70,13 @@ static object_state objects[MINORS];
 static struct workqueue_struct* lp_workqueue[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
-static DECLARE_WORK(work, workqueue_writefn);
 
 static void workqueue_writefn(struct work_struct *work)
 {
       
       int ret;
       packed_work *device;
-      device = container_of(work,packed_work,the_work);
+      
       int minor = get_minor(device -> filp);
       if(minor < 0){
         printk(KERN_INFO "Error minor work queue\n");
@@ -86,6 +84,7 @@ static void workqueue_writefn(struct work_struct *work)
       //prendere lock e differenziare se bloccante o no
       object_state *the_object;
       printk(KERN_INFO "Executing Workqueue Function\n");
+      device = container_of(work,packed_work,the_work);
       the_object = objects + minor;
        if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
        {
@@ -157,12 +156,18 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int ret;
   int ret_mutex;
   int prior;
+  packed_work* packed_work_sched;
   //wait_queue_head_t data;
   object_state *the_object;
-
+  
   the_object = objects + minor;
   prior = the_object ->is_in_high_prior;
-  packed_work packed_work_sched = {.filp = filp, .buff = buff, .len = len, .off = off, .the_work = the_object -> lp_work};
+  packed_work_sched = kmalloc(sizeof(packed_work), GFP_KERNEL);
+  if(packed_work_sched == NULL){
+    return -ENOSPC;
+  }
+  
+  //packed_work_sched.the_work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
   // printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
   if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
@@ -185,7 +190,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       }else{
         //caso deferred work
         printk(KERN_INFO "Case Blocking with non priority\n");
+        INIT_WORK(&packed_work_sched -> the_work, workqueue_writefn);
         //schedule_work(&packed_work_sched.the_work);
+        packed_work_sched -> filp = filp;
+        packed_work_sched -> buff = buff;
+        packed_work_sched -> len = len;
+        packed_work_sched -> off = off;
+
         int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
         if(!ret_queue){
           return -EALREADY;
