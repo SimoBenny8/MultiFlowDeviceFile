@@ -19,6 +19,7 @@
 #include <linux/workqueue.h> 
 #include <linux/errno.h>
 #include <linux/list.h>
+#include <linux/slab.h>
 
 #include "ioctl.h"
 
@@ -197,7 +198,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> len = len;
         packed_work_sched -> off = off;
 
-        int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
+        int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched -> the_work);
         if(!ret_queue){
           return -EALREADY;
         }
@@ -227,11 +228,18 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
        //caso deferred work
       printk(KERN_INFO "Case Non Blocking with non priority\n");
        //schedule_work(&packed_work_sched.the_work);
-      int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
-      if(!ret_queue){
-        return -EALREADY;
-      }
-      return 30; //scegliere codice di errore per questo caso
+      INIT_WORK(&packed_work_sched -> the_work, workqueue_writefn);
+        //schedule_work(&packed_work_sched.the_work);
+        packed_work_sched -> filp = filp;
+        packed_work_sched -> buff = buff;
+        packed_work_sched -> len = len;
+        packed_work_sched -> off = off;
+
+        int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched -> the_work);
+        if(!ret_queue){
+          return -EALREADY;
+        }
+        return 30; //scegliere codice di errore per questo caso
        
 
     }
