@@ -27,9 +27,10 @@ void * the_thread_write(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 300;
-	ioctl(fd,HP_B,(int32_t*) &sec);
-	for(i=0;i<5;i++) write(fd,DATA,SIZE);
+	int32_t sec = 1;
+	ioctl(fd,LP_B,(int32_t*) &sec);
+	//for(i=0;i<5;i++) 
+	write(fd,DATA,SIZE);
 	close(fd);
 	return NULL;
 
@@ -52,7 +53,7 @@ void * the_thread_read(void* path){
 	}
 	printf("device %s successfully opened\n",device);
 	int32_t sec = 1;
-	ioctl(fd,HP_B,(int32_t*) &sec);
+	ioctl(fd,LP_NB,(int32_t*) &sec);
 	while ((retval = read(fd, buffer, 1)) > 0)
         printf("%c", *buffer);    
     if (retval < 0) {
@@ -88,7 +89,7 @@ int main(int argc, char** argv){
 	system(buff);
 	sprintf(buff,"%s%d",path,i);
 	pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-	pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+	//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
      }
 
      pause();

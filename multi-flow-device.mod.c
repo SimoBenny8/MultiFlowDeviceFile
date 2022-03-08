@@ -32,21 +32,20 @@ __used __section(__versions) = {
 	{ 0xd9a5ea54, "__init_waitqueue_head" },
 	{ 0x977f511b, "__mutex_init" },
 	{ 0xb44ad4b3, "_copy_to_user" },
-	{ 0x2ab7989d, "mutex_lock" },
 	{ 0xdecd0b29, "__stack_chk_fail" },
 	{ 0x8ddd8aad, "schedule_timeout" },
-	{ 0x2db3d320, "mutex_lock_interruptible" },
-	{ 0x3eeb2322, "__wake_up" },
-	{ 0x409bcb62, "mutex_unlock" },
+	{ 0xc5b6f236, "queue_work_on" },
+	{ 0x2d3385d3, "system_wq" },
 	{ 0x362ef408, "_copy_from_user" },
 	{ 0x88db9f48, "__check_object_size" },
+	{ 0xf21017d9, "mutex_trylock" },
+	{ 0x3eeb2322, "__wake_up" },
+	{ 0x409bcb62, "mutex_unlock" },
 	{ 0x92540fbf, "finish_wait" },
 	{ 0x8c26d495, "prepare_to_wait_event" },
 	{ 0xfe487975, "init_wait_entry" },
 	{ 0xa1c76e0a, "_cond_resched" },
-	{ 0xf21017d9, "mutex_trylock" },
-	{ 0xc5b6f236, "queue_work_on" },
-	{ 0x2d3385d3, "system_wq" },
+	{ 0x2db3d320, "mutex_lock_interruptible" },
 	{ 0x56470118, "__warn_printk" },
 	{ 0xc5850110, "printk" },
 	{ 0xbdfb6dbb, "__fentry__" },
@@ -55,4 +54,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "3A0B108C6FB40134980F332");
+MODULE_INFO(srcversion, "4C8E8A5827171A4AEC115B5");

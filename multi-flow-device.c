@@ -42,7 +42,8 @@ static int Major; /* Major number assigned to broadcast device driver */
 typedef struct _object_state
 {
   //struct mutex hp_operation_synchronizer;
-  struct mutex operation_synchronizer;
+  struct mutex lp_operation_synchronizer;
+  struct mutex hp_operation_synchronizer;
   wait_queue_head_t hp_queue;
   wait_queue_head_t lp_queue;
   struct work_struct lp_workqueue;
@@ -68,16 +69,53 @@ typedef struct _packed_work{
 #define MINORS 128
 
 object_state objects[MINORS];
+struct workqueue_struct* lp_workqueue[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
 void workqueue_writefn(struct work_struct *work)
 {
-      //printk(KERN_INFO "Executing Workqueue Function\n");
+      
+      int ret;
       packed_work *device;
       device = container_of(work,packed_work,the_work);
+      int minor = get_minor(device -> filp);
       //prendere lock e differenziare se bloccante o no
-      //fare funzione 
+      object_state *the_object;
+      printk(KERN_INFO "Executing Workqueue Function\n");
+      the_object = objects + minor;
+       if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
+       {
+         mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
+       } else{
+         mutex_trylock(&(the_object->lp_operation_synchronizer));
+       }
+  
+
+  *(device -> off) += the_object -> low_prior_valid_bytes;
+  
+
+  if (*(device -> off) >= OBJECT_MAX_SIZE)
+  { // offset too large
+    mutex_unlock(&(the_object->lp_operation_synchronizer));
+  }
+  if (((!the_object -> is_in_high_prior) && *(device -> off) > the_object->low_prior_valid_bytes))
+  { // offset beyond the current stream size
+    mutex_unlock(&(the_object->lp_operation_synchronizer));
+  }
+
+  if ((OBJECT_MAX_SIZE - *(device -> off)) < device -> len) device -> len = OBJECT_MAX_SIZE - *(device -> off);
+
+ 
+  ret = copy_from_user(&(the_object->low_prior_stream_content[*(device -> off)]), device ->buff, device ->len);
+  
+
+  *(device -> off) += (device -> len - ret);
+  the_object->low_prior_valid_bytes = *(device -> off);
+  
+  mutex_unlock(&(the_object->lp_operation_synchronizer));
+  printk(KERN_INFO "Finished Workqueue Function\n");
+      
 }
 
 /* the actual driver */
@@ -118,10 +156,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int prior;
   //wait_queue_head_t data;
   object_state *the_object;
-  
- 
-  
-  
+
   the_object = objects + minor;
   prior = the_object ->is_in_high_prior;
   packed_work packed_work_sched = {.filp = filp, .buff = buff, .len = len, .off = off, .the_work = the_object -> lp_workqueue};
@@ -131,10 +166,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   { 
     if(prior){
       //caso con waitqueue
-      ret_mutex = mutex_lock_interruptible(&(the_object->operation_synchronizer));
+      printk(KERN_INFO "Case Blocking with priority\n");
+
+      ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
       if (ret_mutex != 0){
         //init_waitqueue_entry(&wait, current);
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         //cambiare perchè non FIFO
         if(!ret_wq){
           printk("Timeout expired\n");
@@ -142,24 +179,29 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         }
       }
 
-    }else{
-       //caso deferred work
-       if(list_empty(&(&(the_object-> hp_queue))-> head)){
-          schedule_work(&packed_work_sched.the_work);
-          return 30; //scegliere codice di errore per questo caso
-       }
+      }else{
+        //caso deferred work
+        printk(KERN_INFO "Case Blocking with non priority\n");
+        //schedule_work(&packed_work_sched.the_work);
+        int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
+        if(!ret_queue){
+          return -EALREADY;
+        }
+        return 30; //scegliere codice di errore per questo caso
+      }
         
 
-    }
+    
     printk("%s: somebody called a blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
   }
   else
   {
     if(prior){
       //caso con waitqueue
-      ret_mutex = mutex_trylock(&(the_object->operation_synchronizer));
+      printk(KERN_INFO "Case Non Blocking with priority\n");
+      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));
       if (ret_mutex != 0){
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         //cambiare perchè non FIFO
         if(!ret_wq){
           printk("Timeout expired\n");
@@ -169,10 +211,14 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
     }else{
        //caso deferred work
-       if(list_empty(&(&(the_object-> lp_queue))-> head)){
-          schedule_work(&packed_work_sched.the_work);
-          return 30; //scegliere codice di errore per questo caso
-       }
+      printk(KERN_INFO "Case Non Blocking with non priority\n");
+       //schedule_work(&packed_work_sched.the_work);
+      int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
+      if(!ret_queue){
+        return -EALREADY;
+      }
+      return 30; //scegliere codice di errore per questo caso
+       
 
     }
     printk("%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
@@ -186,20 +232,23 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   if (*off >= OBJECT_MAX_SIZE)
   { // offset too large
-    mutex_unlock(&(the_object->operation_synchronizer));
+    
     if(prior){
+      mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
+      mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
     return -ENOSPC; // no space left on device
   }
   if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   { // offset beyond the current stream size
-    mutex_unlock(&(the_object->operation_synchronizer));
     if(prior){
+      mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
+      mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
     return -ENOSR; // out of stream resources
@@ -225,12 +274,15 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   }
   
 
-  mutex_unlock(&(the_object->operation_synchronizer));
+  //mutex_unlock(&(the_object->operation_synchronizer));
    if(prior){
-      wake_up_interruptible(&the_object ->hp_queue);
+     mutex_unlock(&(the_object->hp_operation_synchronizer));
+     wake_up_interruptible(&the_object ->hp_queue);
     }else{
+      mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
+  printk(KERN_INFO "finisched write\n");
   return len - ret;
 }
 
@@ -240,24 +292,43 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
   int minor = get_minor(filp);
   int ret;
+  int prior;
   object_state *the_object;
 
   the_object = objects + minor;
+  prior = the_object -> is_in_high_prior;
   printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 
   if (the_object->blocking)
   {
-    mutex_lock(&(the_object->operation_synchronizer));
+    if(prior){
+      mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
+    }else{
+      mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
+    }
+    
   }
   else
   {
-    if(!mutex_trylock(&(the_object->operation_synchronizer))){
+    if(prior){
+      if(!mutex_trylock(&(the_object->hp_operation_synchronizer))){
+      return -EBUSY;
+      }
+    }else{
+      if(!mutex_trylock(&(the_object->lp_operation_synchronizer))){
       return -EBUSY;
     }
+    }
+    
   }
   if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   {
-    mutex_unlock(&(the_object->operation_synchronizer));
+    if(prior){
+      mutex_unlock(&(the_object->hp_operation_synchronizer));
+    }else{
+      mutex_unlock(&(the_object->lp_operation_synchronizer));
+    }
+    
     return 0;
   }
 
@@ -274,16 +345,24 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (the_object->is_in_high_prior)
   {
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
-    the_object->high_prior_stream_content[0] = the_object->high_prior_stream_content[*off + ret]; //prova cancellazione contenuto
+    the_object->high_prior_stream_content += len; //prova cancellazione contenuto
+    the_object -> high_prior_valid_bytes -= len;
   }
   else
   {
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
-    the_object->low_prior_stream_content[0] = the_object->low_prior_stream_content[*off + ret];
+    //the_object->low_prior_stream_content[0] = the_object->low_prior_stream_content[*off + ret];
+    the_object->low_prior_stream_content += len; //prova cancellazione contenuto
+    the_object -> low_prior_valid_bytes -= len;
   }
 
   *off += (len - ret);
-  mutex_unlock(&(the_object->operation_synchronizer));
+  if(prior){
+    mutex_unlock(&(the_object->hp_operation_synchronizer));
+  }else{
+    mutex_unlock(&(the_object->lp_operation_synchronizer));
+  }
+  
   return len - ret;
 }
 
@@ -351,13 +430,14 @@ int init_module(void)
   for (i = 0; i < MINORS; i++)
   {
 
-    mutex_init(&(objects[i].operation_synchronizer));
+    mutex_init(&(objects[i].lp_operation_synchronizer));
+    mutex_init(&(objects[i].hp_operation_synchronizer));
     init_waitqueue_head(&(objects[i].hp_queue));
     init_waitqueue_head(&(objects[i].lp_queue));
-    INIT_WORK(&(objects[i].lp_workqueue),workqueue_writefn);
+    lp_workqueue[i] = create_singlethread_workqueue("wq");
+    //INIT_WORK(&(objects[i].lp_workqueue),workqueue_writefn);
     objects[i].blocking = 0;
     objects[i].timeout = 0;
-    //objects[i].flag = 'n';
     objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;
