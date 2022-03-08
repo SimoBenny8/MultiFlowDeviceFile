@@ -33,18 +33,19 @@ __used __section(__versions) = {
 	{ 0xdf9208c0, "alloc_workqueue" },
 	{ 0xd9a5ea54, "__init_waitqueue_head" },
 	{ 0x977f511b, "__mutex_init" },
+	{ 0x37a0cba, "kfree" },
 	{ 0xb44ad4b3, "_copy_to_user" },
-	{ 0xdecd0b29, "__stack_chk_fail" },
-	{ 0x8ddd8aad, "schedule_timeout" },
 	{ 0x362ef408, "_copy_from_user" },
 	{ 0x88db9f48, "__check_object_size" },
-	{ 0xc5b6f236, "queue_work_on" },
-	{ 0xf21017d9, "mutex_trylock" },
-	{ 0x3eeb2322, "__wake_up" },
-	{ 0x409bcb62, "mutex_unlock" },
+	{ 0x8ddd8aad, "schedule_timeout" },
 	{ 0x92540fbf, "finish_wait" },
 	{ 0x8c26d495, "prepare_to_wait_event" },
 	{ 0xfe487975, "init_wait_entry" },
+	{ 0xc5b6f236, "queue_work_on" },
+	{ 0xf21017d9, "mutex_trylock" },
+	{ 0xdecd0b29, "__stack_chk_fail" },
+	{ 0x3eeb2322, "__wake_up" },
+	{ 0x409bcb62, "mutex_unlock" },
 	{ 0xa1c76e0a, "_cond_resched" },
 	{ 0x2db3d320, "mutex_lock_interruptible" },
 	{ 0xf5cb25c8, "kmem_cache_alloc_trace" },
@@ -57,4 +58,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "17DBB9AF232F27581EC57AB");
+MODULE_INFO(srcversion, "9979E2618BA9CC11C489292");
