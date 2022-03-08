@@ -913,6 +913,16 @@ deps_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o := \
   include/uapi/linux/tty_flags.h \
   include/uapi/linux/tty.h \
   include/generated/uapi/linux/version.h \
+  include/linux/slab.h \
+    $(wildcard include/config/debug/slab.h) \
+    $(wildcard include/config/failslab.h) \
+    $(wildcard include/config/have/hardened/usercopy/allocator.h) \
+    $(wildcard include/config/slab.h) \
+    $(wildcard include/config/slub.h) \
+    $(wildcard include/config/slob.h) \
+  include/linux/percpu-refcount.h \
+  include/linux/kasan.h \
+    $(wildcard include/config/kasan/generic.h) \
   /home/simone/Documents/MultiFlowDeviceFile/ioctl.h \
 
 /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o: $(deps_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o)

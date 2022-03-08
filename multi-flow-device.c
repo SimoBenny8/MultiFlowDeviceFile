@@ -30,7 +30,6 @@ MODULE_AUTHOR("Simone Benedetti");
 #define DEVICE_NAME "multiflowdev" /* Device file name in /dev/ - not mandatory  */
 
 static int Major; /* Major number assigned to broadcast device driver */
-static void workqueue_writefn(struct work_struct *work);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 #define get_major(session) MAJOR(session->f_inode->i_rdev)
@@ -72,11 +71,12 @@ static struct workqueue_struct* lp_workqueue[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
-static void workqueue_writefn(struct work_struct *work)
+static void workqueue_writefn(unsigned long work)
 {
       
       int ret;
       packed_work *device;
+      
       
       int minor = get_minor(device -> filp);
       if(minor < 0){
@@ -85,7 +85,7 @@ static void workqueue_writefn(struct work_struct *work)
       //prendere lock e differenziare se bloccante o no
       object_state *the_object;
       printk(KERN_INFO "Executing Workqueue Function\n");
-      device = container_of(work,packed_work,the_work);
+      device = container_of((void*)work,packed_work,the_work);
       the_object = objects + minor;
        if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
        {
@@ -163,7 +163,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   
   the_object = objects + minor;
   prior = the_object ->is_in_high_prior;
-  packed_work_sched = kmalloc(sizeof(packed_work), GFP_KERNEL);
+  packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
   if(packed_work_sched == NULL){
     return -ENOSPC;
   }
@@ -191,12 +191,14 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       }else{
         //caso deferred work
         printk(KERN_INFO "Case Blocking with non priority\n");
-        INIT_WORK(&packed_work_sched -> the_work, workqueue_writefn);
-        //schedule_work(&packed_work_sched.the_work);
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
         packed_work_sched -> len = len;
         packed_work_sched -> off = off;
+
+        __INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn, (unsigned long) (&(packed_work_sched -> the_work)));
+        //schedule_work(&packed_work_sched.the_work);
+      
 
         int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched -> the_work);
         if(!ret_queue){
@@ -227,13 +229,14 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     }else{
        //caso deferred work
       printk(KERN_INFO "Case Non Blocking with non priority\n");
-       //schedule_work(&packed_work_sched.the_work);
-      INIT_WORK(&packed_work_sched -> the_work, workqueue_writefn);
-        //schedule_work(&packed_work_sched.the_work);
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
         packed_work_sched -> len = len;
         packed_work_sched -> off = off;
+
+        __INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn, (unsigned long) (&(packed_work_sched -> the_work)));
+        //schedule_work(&packed_work_sched.the_work);
+      
 
         int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched -> the_work);
         if(!ret_queue){
@@ -456,7 +459,7 @@ int init_module(void)
     mutex_init(&(objects[i].hp_operation_synchronizer));
     init_waitqueue_head(&(objects[i].hp_queue));
     init_waitqueue_head(&(objects[i].lp_queue));
-    lp_workqueue[i] = create_singlethread_workqueue("wq");
+    lp_workqueue[i] = create_workqueue("wq");
     //INIT_WORK(&(objects[i].lp_workqueue),workqueue_writefn);
     objects[i].blocking = 0;
     objects[i].timeout = 0;
