@@ -19,6 +19,7 @@
 #include <linux/workqueue.h> 
 #include <linux/errno.h>
 #include <linux/list.h>
+#include <linux/slab.h>
 
 #include "ioctl.h"
 
@@ -29,7 +30,6 @@ MODULE_AUTHOR("Simone Benedetti");
 #define DEVICE_NAME "multiflowdev" /* Device file name in /dev/ - not mandatory  */
 
 static int Major; /* Major number assigned to broadcast device driver */
-static void workqueue_writefn(struct work_struct *work);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 #define get_major(session) MAJOR(session->f_inode->i_rdev)
@@ -45,7 +45,7 @@ typedef struct _object_state
   struct mutex hp_operation_synchronizer;
   wait_queue_head_t hp_queue;
   wait_queue_head_t lp_queue;
-  struct work_struct lp_work;
+  struct workqueue_struct* lp_workqueue;
   int low_prior_valid_bytes;
   int high_prior_valid_bytes;
   char *low_prior_stream_content;
@@ -68,26 +68,28 @@ typedef struct _packed_work{
 #define MINORS 128
 
 static object_state objects[MINORS];
-static struct workqueue_struct* lp_workqueue[MINORS];
+//static struct workqueue_struct* lp_workqueue[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
-static DECLARE_WORK(work, workqueue_writefn);
 
 static void workqueue_writefn(struct work_struct *work)
 {
       
       int ret;
       packed_work *device;
+      
+  
+      //prendere lock e differenziare se bloccante o no
+      object_state *the_object;
+      printk(KERN_INFO "Executing Workqueue Function\n");
       device = container_of(work,packed_work,the_work);
+      
       int minor = get_minor(device -> filp);
       if(minor < 0){
         printk(KERN_INFO "Error minor work queue\n");
       }
-      //prendere lock e differenziare se bloccante o no
-      object_state *the_object;
-      printk(KERN_INFO "Executing Workqueue Function\n");
       the_object = objects + minor;
-       if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
+       if (the_object->blocking) 
        {
          mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
        } else{
@@ -118,6 +120,7 @@ static void workqueue_writefn(struct work_struct *work)
   
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   printk(KERN_INFO "Finished Workqueue Function\n");
+  
       
 }
 
@@ -157,12 +160,18 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int ret;
   int ret_mutex;
   int prior;
+  packed_work* packed_work_sched;
   //wait_queue_head_t data;
   object_state *the_object;
-
+  
   the_object = objects + minor;
   prior = the_object ->is_in_high_prior;
-  packed_work packed_work_sched = {.filp = filp, .buff = buff, .len = len, .off = off, .the_work = the_object -> lp_work};
+  packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
+  if(packed_work_sched == NULL){
+    return -ENOSPC;
+  }
+  printk("%s: work buffer allocation success - address is %p\n",MODNAME,packed_work_sched);
+  //packed_work_sched.the_work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
   // printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
   if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
@@ -184,9 +193,18 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
+        packed_work_sched -> filp = filp;
+        packed_work_sched -> buff = buff;
+        packed_work_sched -> len = len;
+        packed_work_sched -> off = off;
         printk(KERN_INFO "Case Blocking with non priority\n");
-        //schedule_work(&packed_work_sched.the_work);
-        int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
+        
+
+        __INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn,(&(packed_work_sched -> the_work)));
+        //schedule_work_on(0,&packed_work_sched -> the_work);
+      
+
+       int ret_queue = queue_work(the_object -> lp_workqueue,&packed_work_sched -> the_work);
         if(!ret_queue){
           return -EALREADY;
         }
@@ -215,12 +233,20 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     }else{
        //caso deferred work
       printk(KERN_INFO "Case Non Blocking with non priority\n");
-       //schedule_work(&packed_work_sched.the_work);
-      int ret_queue = queue_work(lp_workqueue[minor],&packed_work_sched.the_work);
-      if(!ret_queue){
-        return -EALREADY;
-      }
-      return 30; //scegliere codice di errore per questo caso
+        packed_work_sched -> filp = filp;
+        packed_work_sched -> buff = buff;
+        packed_work_sched -> len = len;
+        packed_work_sched -> off = off;
+
+        __INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn, (unsigned long) (&(packed_work_sched -> the_work)));
+        //schedule_work(&packed_work_sched.the_work);
+      
+
+        int ret_queue = queue_work(the_object -> lp_workqueue,&packed_work_sched -> the_work);
+        if(!ret_queue){
+          return -EALREADY;
+        }
+        return 30; //scegliere codice di errore per questo caso
        
 
     }
@@ -437,7 +463,11 @@ int init_module(void)
     mutex_init(&(objects[i].hp_operation_synchronizer));
     init_waitqueue_head(&(objects[i].hp_queue));
     init_waitqueue_head(&(objects[i].lp_queue));
-    lp_workqueue[i] = create_singlethread_workqueue("wq");
+    objects[i].lp_workqueue = create_singlethread_workqueue("wq");
+    if ( !objects[i].lp_workqueue ) {
+		printk( "create workqueue failed\n" );
+		
+	  }
     //INIT_WORK(&(objects[i].lp_workqueue),workqueue_writefn);
     objects[i].blocking = 0;
     objects[i].timeout = 0;
@@ -467,7 +497,7 @@ int init_module(void)
 revert_allocation:
   for (; i >= 0; i--)
   {
-    destroy_workqueue(lp_workqueue[i]);
+    destroy_workqueue(objects[i].lp_workqueue);
     free_page((unsigned long)objects[i].low_prior_stream_content);
     free_page((unsigned long)objects[i].high_prior_stream_content);
   }
@@ -480,7 +510,7 @@ void cleanup_module(void)
   int i;
   for (i = 0; i < MINORS; i++)
   {
-    destroy_workqueue(lp_workqueue[i]);
+    destroy_workqueue(objects[i].lp_workqueue);
     free_page((unsigned long)objects[i].low_prior_stream_content);
     free_page((unsigned long)objects[i].high_prior_stream_content);
   }
