@@ -72,7 +72,7 @@ static object_state objects[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
-static void workqueue_writefn(unsigned long work)
+static void workqueue_writefn(struct work_struct* work)
 {
       
       int ret;

@@ -33,7 +33,6 @@ __used __section(__versions) = {
 	{ 0xdf9208c0, "alloc_workqueue" },
 	{ 0xd9a5ea54, "__init_waitqueue_head" },
 	{ 0x977f511b, "__mutex_init" },
-	{ 0x37a0cba, "kfree" },
 	{ 0xb44ad4b3, "_copy_to_user" },
 	{ 0x362ef408, "_copy_from_user" },
 	{ 0x88db9f48, "__check_object_size" },
@@ -58,8 +57,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-<<<<<<< HEAD
-MODULE_INFO(srcversion, "46A35916FF4B6D5B9276C3E");
-=======
-MODULE_INFO(srcversion, "9979E2618BA9CC11C489292");
->>>>>>> 9fadce628df1218a86c3571f4ce605238f92cf5f
+MODULE_INFO(srcversion, "A05DBD9BCC0FC7FC9C96E76");
