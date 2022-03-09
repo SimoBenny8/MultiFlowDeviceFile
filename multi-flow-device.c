@@ -20,6 +20,7 @@
 #include <linux/errno.h>
 #include <linux/list.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 
 #include "ioctl.h"
 
@@ -83,7 +84,7 @@ static void workqueue_writefn(struct work_struct* work)
       printk(KERN_INFO "Executing Workqueue Function\n");
       packed_work * device = (packed_work*)container_of(work,packed_work,the_work);
       printk(KERN_INFO "Container_of eseguita \n");
-      sleep(1);
+      msleep(1000);
       
       int minor = get_minor(device -> filp);
       if(minor < 0){
