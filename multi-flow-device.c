@@ -202,12 +202,16 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         //caso deferred work
         //packed_work_sched -> filp = kzalloc(sizeof(struct file), GFP_ATOMIC);
         //packed_work_sched -> buff = kzalloc(sizeof(char)*4096, GFP_ATOMIC);
-        packed_work_sched -> len = len;
+        //packed_work_sched -> len = len;
         //packed_work_sched -> off = kzalloc(sizeof(loff_t), GFP_ATOMIC);
+        packed_work_sched -> filp = NULL;
+        packed_work_sched -> buff = NULL;
+        packed_work_sched -> len = 0;
+        packed_work_sched -> off = NULL;
 
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
-        //packed_work_sched -> len = len;
+        packed_work_sched -> len = len;
         packed_work_sched -> off = off;
         printk(KERN_INFO "Case Blocking with non priority\n");
         //printk("%s: contenuto del buffer\n", packed_work_sched -> buff);
