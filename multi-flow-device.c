@@ -101,7 +101,8 @@ static void workqueue_writefn(struct work_struct* work)
          printk(KERN_INFO "Preso lock\n");
        }
   
-
+  //*(device -> off) = 0;
+  printk(KERN_DEBUG "aggiorna offset a zero: %lld\n", *(device -> off));
   *(device -> off) += the_object -> low_prior_valid_bytes;
   printk(KERN_DEBUG "aggiorna offset eseguita: %lld\n", *(device -> off));
 
@@ -207,7 +208,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
         //packed_work_sched -> len = len;
-        packed_work_sched -> off = *(off);
+        packed_work_sched -> off = off;
         printk(KERN_INFO "Case Blocking with non priority\n");
         //printk("%s: contenuto del buffer\n", packed_work_sched -> buff);
         
