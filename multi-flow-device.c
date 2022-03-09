@@ -95,8 +95,10 @@ static void workqueue_writefn(struct work_struct* work)
        if (the_object->blocking) 
        {
          mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
+         printk(KERN_INFO "Preso lock\n");
        } else{
          mutex_trylock(&(the_object->lp_operation_synchronizer));
+         printk(KERN_INFO "Preso lock\n");
        }
   
 
@@ -114,7 +116,7 @@ static void workqueue_writefn(struct work_struct* work)
 
   if ((OBJECT_MAX_SIZE - *(device -> off)) < device -> len) device -> len = OBJECT_MAX_SIZE - *(device -> off);
 
- 
+  printk("%s: contenuto del buffer, %d: contenuto di len, %d: contenuto di offset\n", device ->buff, device -> len, device -> off);
   ret = copy_from_user(&(the_object->low_prior_stream_content[*(device -> off)]), device ->buff, device ->len);
   printk(KERN_INFO "Copy to user eseguita\n");
 
