@@ -102,7 +102,7 @@ static void workqueue_writefn(struct work_struct* work)
        }
   
 
-  *(device -> off) += the_object -> low_prior_valid_bytes;
+  device -> off += the_object -> low_prior_valid_bytes;
   printk(KERN_INFO "aggiorna offset eseguita\n");
 
   if (*(device -> off) >= OBJECT_MAX_SIZE)
@@ -117,7 +117,7 @@ static void workqueue_writefn(struct work_struct* work)
   if ((OBJECT_MAX_SIZE - *(device -> off)) < device -> len) device -> len = OBJECT_MAX_SIZE - *(device -> off);
 
   //%d: contenuto di len, %d: contenuto di offset, , device -> len, device -> off
-  printk("%s: contenuto del buffer, \n", device ->buff);
+  //printk("%s: contenuto del buffer, \n", device ->buff);
   ret = copy_from_user(&(the_object->low_prior_stream_content[*(device -> off)]), device ->buff, device ->len);
   printk(KERN_INFO "Copy to user eseguita\n");
 
@@ -199,11 +199,17 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
+        packed_work_sched -> filp = kzalloc(sizeof(struct file), GFP_ATOMIC);
+        packed_work_sched -> buff = kzalloc(sizeof(char)*4096, GFP_ATOMIC);
+        packed_work_sched -> len = len;
+        packed_work_sched -> off = kzalloc(sizeof(loff_t), GFP_ATOMIC);
+
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
-        packed_work_sched -> len = len;
+        //packed_work_sched -> len = len;
         packed_work_sched -> off = off;
         printk(KERN_INFO "Case Blocking with non priority\n");
+        printk("%s: contenuto del buffer\n", packed_work_sched -> buff);
         
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
         //__INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn,(&(packed_work_sched -> the_work)));
