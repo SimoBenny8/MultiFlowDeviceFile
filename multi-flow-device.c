@@ -168,12 +168,14 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int ret_mutex;
   int prior;
   packed_work* packed_work_sched;
+  loff_t offset_write;
   //wait_queue_head_t data;
   object_state *the_object;
   
   the_object = objects + minor;
   prior = the_object ->is_in_high_prior;
   packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
+  offset_write = *off;
   if(packed_work_sched == NULL){
     return -ENOSPC;
   }
@@ -212,7 +214,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
         packed_work_sched -> len = len;
-        packed_work_sched -> off = off;
+        packed_work_sched -> off = &offset_write;
         printk(KERN_INFO "Case Blocking with non priority\n");
         //printk("%s: contenuto del buffer\n", packed_work_sched -> buff);
         
