@@ -200,10 +200,10 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
-        packed_work_sched -> filp = kzalloc(sizeof(struct file), GFP_ATOMIC);
-        packed_work_sched -> buff = kzalloc(sizeof(char)*4096, GFP_ATOMIC);
+        //packed_work_sched -> filp = kzalloc(sizeof(struct file), GFP_ATOMIC);
+        //packed_work_sched -> buff = kzalloc(sizeof(char)*4096, GFP_ATOMIC);
         packed_work_sched -> len = len;
-        packed_work_sched -> off = kzalloc(sizeof(loff_t), GFP_ATOMIC);
+        //packed_work_sched -> off = kzalloc(sizeof(loff_t), GFP_ATOMIC);
 
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
