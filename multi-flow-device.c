@@ -59,7 +59,7 @@ typedef struct _object_state
 
 typedef struct _packed_work{
         struct file *filp;
-        const char *buff;
+        char *buff;
         size_t len; 
         loff_t *off;
         struct work_struct the_work;
@@ -116,7 +116,8 @@ static void workqueue_writefn(struct work_struct* work)
 
   if ((OBJECT_MAX_SIZE - *(device -> off)) < device -> len) device -> len = OBJECT_MAX_SIZE - *(device -> off);
 
-  printk("%s: contenuto del buffer, %d: contenuto di len, %d: contenuto di offset\n", device ->buff, device -> len, device -> off);
+  //%d: contenuto di len, %d: contenuto di offset, , device -> len, device -> off
+  printk("%s: contenuto del buffer, \n", device ->buff);
   ret = copy_from_user(&(the_object->low_prior_stream_content[*(device -> off)]), device ->buff, device ->len);
   printk(KERN_INFO "Copy to user eseguita\n");
 
