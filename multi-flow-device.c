@@ -84,13 +84,14 @@ static void workqueue_writefn(struct work_struct* work)
       printk(KERN_INFO "Executing Workqueue Function\n");
       packed_work * device = (packed_work*)container_of(work,packed_work,the_work);
       printk(KERN_INFO "Container_of eseguita \n");
-      msleep(1000);
       
       int minor = get_minor(device -> filp);
+      printk(KERN_INFO "Get minor eseguita\n");
       if(minor < 0){
         printk(KERN_INFO "Error minor work queue\n");
       }
       the_object = objects + minor;
+      printk(KERN_INFO "Get the_object eseguita\n");
        if (the_object->blocking) 
        {
          mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
@@ -100,7 +101,7 @@ static void workqueue_writefn(struct work_struct* work)
   
 
   *(device -> off) += the_object -> low_prior_valid_bytes;
-  
+  printk(KERN_INFO "aggiorna offset eseguita\n");
 
   if (*(device -> off) >= OBJECT_MAX_SIZE)
   { // offset too large
@@ -115,7 +116,7 @@ static void workqueue_writefn(struct work_struct* work)
 
  
   ret = copy_from_user(&(the_object->low_prior_stream_content[*(device -> off)]), device ->buff, device ->len);
-  
+  printk(KERN_INFO "Copy to user eseguita\n");
 
   *(device -> off) += (device -> len - ret);
   the_object->low_prior_valid_bytes = *(device -> off);
