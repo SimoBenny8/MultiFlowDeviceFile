@@ -72,17 +72,18 @@ static object_state objects[MINORS];
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
-static void workqueue_writefn(unsigned long work)
+static void workqueue_writefn(struct work_struct* work)
 {
       
       int ret;
-      packed_work *device;
       
   
       //prendere lock e differenziare se bloccante o no
       object_state *the_object;
       printk(KERN_INFO "Executing Workqueue Function\n");
-      device = container_of(work,packed_work,the_work);
+      packed_work * device = (packed_work*)container_of(work,packed_work,the_work);
+      printk(KERN_INFO "Container_of eseguita \n");
+      sleep(1);
       
       int minor = get_minor(device -> filp);
       if(minor < 0){
@@ -199,12 +200,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> off = off;
         printk(KERN_INFO "Case Blocking with non priority\n");
         
-
-        __INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn,(&(packed_work_sched -> the_work)));
+        INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
+        //__INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn,(&(packed_work_sched -> the_work)));
         //schedule_work_on(0,&packed_work_sched -> the_work);
       
 
-       int ret_queue = queue_work(the_object -> lp_workqueue,&packed_work_sched -> the_work);
+       int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         if(!ret_queue){
           return -EALREADY;
         }
@@ -238,11 +239,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> len = len;
         packed_work_sched -> off = off;
 
-        __INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn, (unsigned long) (&(packed_work_sched -> the_work)));
+
+        INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
+        //__INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn, (unsigned long) (&(packed_work_sched -> the_work)));
         //schedule_work(&packed_work_sched.the_work);
       
 
-        int ret_queue = queue_work(the_object -> lp_workqueue,&packed_work_sched -> the_work);
+        int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         if(!ret_queue){
           return -EALREADY;
         }
