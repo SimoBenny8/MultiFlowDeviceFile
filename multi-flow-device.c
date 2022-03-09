@@ -191,7 +191,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       if (ret_mutex != 0){
         //init_waitqueue_entry(&wait, current);
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
-        //cambiare perchè non FIFO
+        
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
