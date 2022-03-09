@@ -102,27 +102,27 @@ static void workqueue_writefn(struct work_struct* work)
        }
   
 
-  device -> off += the_object -> low_prior_valid_bytes;
-  printk(KERN_INFO "aggiorna offset eseguita\n");
+  *(device -> off) += the_object -> low_prior_valid_bytes;
+  printk(KERN_DEBUG "aggiorna offset eseguita: %lld\n", *(device -> off));
 
-  if (device -> off >= OBJECT_MAX_SIZE)
+  if (*(device -> off) >= OBJECT_MAX_SIZE)
   { // offset too large
     mutex_unlock(&(the_object->lp_operation_synchronizer));
   }
-  if (((!the_object -> is_in_high_prior) && device -> off > the_object->low_prior_valid_bytes))
+  if (((!the_object -> is_in_high_prior) && *(device -> off) > the_object->low_prior_valid_bytes))
   { // offset beyond the current stream size
     mutex_unlock(&(the_object->lp_operation_synchronizer));
   }
 
-  if ((OBJECT_MAX_SIZE - device -> off) < device -> len) device -> len = OBJECT_MAX_SIZE - device -> off;
+  if ((OBJECT_MAX_SIZE - *(device -> off)) < device -> len) device -> len = OBJECT_MAX_SIZE - *(device -> off);
 
   //%d: contenuto di len, %d: contenuto di offset, , device -> len, device -> off
   //printk("%s: contenuto del buffer, \n", device ->buff);
-  ret = copy_from_user(&(the_object->low_prior_stream_content[device -> off]), device ->buff, device ->len);
+  ret = copy_from_user(&(the_object->low_prior_stream_content[*(device -> off)]), device ->buff, device ->len);
   printk(KERN_INFO "Copy to user eseguita\n");
 
-  device -> off += (device -> len - ret);
-  the_object->low_prior_valid_bytes = device -> off;
+  *(device -> off) += (device -> len - ret);
+  the_object->low_prior_valid_bytes = *(device -> off);
   
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   printk(KERN_INFO "Finished Workqueue Function\n");
@@ -207,7 +207,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> filp = filp;
         packed_work_sched -> buff = buff;
         //packed_work_sched -> len = len;
-        packed_work_sched -> off = off;
+        packed_work_sched -> off = *(off);
         printk(KERN_INFO "Case Blocking with non priority\n");
         //printk("%s: contenuto del buffer\n", packed_work_sched -> buff);
         
