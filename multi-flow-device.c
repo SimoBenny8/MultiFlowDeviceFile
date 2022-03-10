@@ -209,7 +209,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
         //strscpy(packed_work_sched -> buffer, buff, len);
         int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
-        if (ret != len){
+        if (ret == (int) len){
           return -ENOBUFS;
         }
         //packed_work_sched -> buffer = kstrndup(buff,len, GFP_KERNEL);
@@ -255,7 +255,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
        //caso deferred work
         printk(KERN_INFO "Case Non Blocking with non priority\n");
         packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
-        memcpy(packed_work_sched -> buffer, buff, len);
+        //strscpy(packed_work_sched -> buffer, buff, len);
+        int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
+        if (ret == len){
+          return -ENOBUFS;
+        }
         /*if (ret_st != (int) len){
           return -EINVAL;
         }*/
