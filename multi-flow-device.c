@@ -111,11 +111,15 @@ static void workqueue_writefn(struct work_struct* work)
 
   if (offset >= OBJECT_MAX_SIZE)
   { // offset too large
+    free_page((unsigned long)(device ->buffer));
+    kfree(device);
     mutex_unlock(&(the_object->lp_operation_synchronizer));
     //wake_up(&(the_object -> lp_workqueue));
   }
   if (((!the_object -> is_in_high_prior) && offset > the_object->low_prior_valid_bytes))
   { // offset beyond the current stream size
+    free_page((unsigned long)(device ->buffer));
+    kfree(device);
     mutex_unlock(&(the_object->lp_operation_synchronizer));
     //wake_up(&(the_object -> lp_workqueue));
   }
@@ -129,8 +133,8 @@ static void workqueue_writefn(struct work_struct* work)
   //offset += (offset - ret);
   offset += len;
   the_object->low_prior_valid_bytes = offset;
-  free_page(device ->buffer);
-  free_page(device);
+  free_page((unsigned long)(device ->buffer));
+  kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   //wake_up(&(the_object -> lp_workqueue));
   printk(KERN_INFO "Finished Workqueue Function\n");                                          
