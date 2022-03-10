@@ -206,8 +206,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
-        packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
-        memcpy(packed_work_sched -> buffer, buff, len);
+        //packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
+        //strscpy(packed_work_sched -> buffer, buff, len);
+        packed_work_sched -> buffer = kstrdup(buff, len, GFP_KERNEL);
         
 
         packed_work_sched -> filp = filp;
@@ -236,7 +237,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if(prior){
       //caso con waitqueue
       printk(KERN_INFO "Case Non Blocking with priority\n");
-      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));
+      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
       if (ret_mutex != 0){
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         //cambiare perchè non FIFO
