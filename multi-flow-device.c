@@ -206,9 +206,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
-        //packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
+        packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
         //strscpy(packed_work_sched -> buffer, buff, len);
-        packed_work_sched -> buffer = kstrdup(buff, len, GFP_KERNEL);
+        int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
+        if (ret != len){
+          return -ENOBUFS;
+        }
+        //packed_work_sched -> buffer = kstrndup(buff,len, GFP_KERNEL);
         
 
         packed_work_sched -> filp = filp;
