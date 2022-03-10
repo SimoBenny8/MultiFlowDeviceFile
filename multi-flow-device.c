@@ -124,7 +124,7 @@ static void workqueue_writefn(struct work_struct* work)
   //printk("%ld: lunghezza del buffer, \n", device ->len);
  // printk("%s: contenuto del buffer, \n", device ->buff);
   ret = copy_from_user(&(the_object->low_prior_stream_content[offset]), buff, len);
-  printk(KERN_INFO "Copy to user eseguita con byte non scritti: %d\n", ret);
+  printk(KERN_INFO "Copy to user eseguita con contenuto scritto: %s\n", the_object->low_prior_stream_content);
 
   offset += (offset - ret);
   the_object->low_prior_valid_bytes = offset;
