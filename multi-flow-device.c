@@ -206,7 +206,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
-        packed_work_sched -> buffer = kzalloc(sizeof(char)*len,GFP_ATOMIC);
+        packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
         memcpy(packed_work_sched -> buffer, buff, len);
         
 
@@ -249,7 +249,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     }else{
        //caso deferred work
         printk(KERN_INFO "Case Non Blocking with non priority\n");
-        packed_work_sched -> buffer = kzalloc(sizeof(buff),GFP_ATOMIC);
+        packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
         memcpy(packed_work_sched -> buffer, buff, len);
         /*if (ret_st != (int) len){
           return -EINVAL;
