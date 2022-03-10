@@ -104,8 +104,7 @@ static void workqueue_writefn(struct work_struct* work)
          printk(KERN_INFO "Preso lock\n");
        }
   
-  //*(device -> off) = 0;
-  //printk(KERN_DEBUG "aggiorna offset a zero: %lld\n", device -> off);
+ 
   offset += the_object -> low_prior_valid_bytes;
   printk(KERN_DEBUG "aggiorna offset eseguita: %lld\n", device -> off);
 
@@ -114,21 +113,21 @@ static void workqueue_writefn(struct work_struct* work)
     free_page((unsigned long)(device ->buffer));
     kfree(device);
     mutex_unlock(&(the_object->lp_operation_synchronizer));
-    //wake_up(&(the_object -> lp_workqueue));
+    wake_up(&(the_object -> lp_queue));
   }
   if (((!the_object -> is_in_high_prior) && offset > the_object->low_prior_valid_bytes))
   { // offset beyond the current stream size
     free_page((unsigned long)(device ->buffer));
     kfree(device);
     mutex_unlock(&(the_object->lp_operation_synchronizer));
-    //wake_up(&(the_object -> lp_workqueue));
+    wake_up(&(the_object -> lp_queue));
   }
 
   if ((OBJECT_MAX_SIZE - offset) < len) len = OBJECT_MAX_SIZE - (offset);
 
  
   strncat(the_object -> low_prior_stream_content,buff, len);
-  printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content, offset);
+  printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content);
 
   //offset += (offset - ret);
   offset += len;
@@ -136,7 +135,7 @@ static void workqueue_writefn(struct work_struct* work)
   free_page((unsigned long)(device ->buffer));
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
-  //wake_up(&(the_object -> lp_workqueue));
+  wake_up(&(the_object -> lp_queue));
   printk(KERN_INFO "Finished Workqueue Function\n");                                          
   
       
@@ -213,26 +212,23 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
+        printk(KERN_INFO "Case Blocking with non priority\n");
         packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
-        //strscpy(packed_work_sched -> buffer, buff, len);
         int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
         if (ret == (int) len){
           return -ENOBUFS;
         }
-        //packed_work_sched -> buffer = kstrndup(buff,len, GFP_KERNEL);
         
-
         packed_work_sched -> filp = filp;
         packed_work_sched -> len = len;
         packed_work_sched -> off = *off;
-        printk(KERN_INFO "Case Blocking with non priority\n");
-        //printk("%s: contenuto del buffer\n", packed_work_sched -> buff);
+       
+        
         
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
-        //__INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn,(&(packed_work_sched -> the_work)));
-      
+              
 
-       int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
+        int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         if(!ret_queue){
           return -EALREADY;
         }
@@ -251,7 +247,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
       if (ret_mutex != 0){
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
-        //cambiare perchè non FIFO
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
@@ -262,14 +257,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
        //caso deferred work
         printk(KERN_INFO "Case Non Blocking with non priority\n");
         packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
-        //strscpy(packed_work_sched -> buffer, buff, len);
         int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
         if (ret == len){
           return -ENOBUFS;
         }
-        /*if (ret_st != (int) len){
-          return -EINVAL;
-        }*/
+        
 
         packed_work_sched -> filp = filp;
         packed_work_sched -> len = len;
@@ -277,9 +269,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
 
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
-        //__INIT_WORK(&(packed_work_sched -> the_work),(void*) workqueue_writefn, (unsigned long) (&(packed_work_sched -> the_work)));
-        //schedule_work(&packed_work_sched.the_work);
-      
 
         int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         if(!ret_queue){
@@ -361,6 +350,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   int minor = get_minor(filp);
   int ret;
   int prior;
+  int ret_mutex;
   object_state *the_object;
 
   the_object = objects + minor;
@@ -371,9 +361,27 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if(prior){
       mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
+      if (ret_mutex != 0){
+        //init_waitqueue_entry(&wait, current);
+        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+        
+        if(!ret_wq){
+          printk("Timeout wait queue Read op expired\n");
+          return -ETIMEDOUT;
+        }
+      }
       //wait queue da inserire
     }else{
       mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
+      if (ret_mutex != 0){
+        //init_waitqueue_entry(&wait, current);
+        int ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_lock_interruptible(&(the_object->lp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+        
+        if(!ret_wq){
+          printk("Timeout wait queue Read op expired\n");
+          return -ETIMEDOUT;
+        }
+      }
     }
     
   }
@@ -381,11 +389,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if(prior){
       if(!mutex_trylock(&(the_object->hp_operation_synchronizer))){
-      return -EBUSY;
+        return -EBUSY;
       }
     }else{
       if(!mutex_trylock(&(the_object->lp_operation_synchronizer))){
-      return -EBUSY;
+        return -EBUSY;
     }
     }
     
@@ -394,8 +402,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if(prior){
       mutex_unlock(&(the_object->hp_operation_synchronizer));
+      wake_up_interruptible(&the_object ->hp_queue);
     }else{
       mutex_unlock(&(the_object->lp_operation_synchronizer));
+      wake_up_interruptible(&the_object ->lp_queue);
     }
     
     return 0;
@@ -428,8 +438,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   *off += (len - ret);
   if(prior){
     mutex_unlock(&(the_object->hp_operation_synchronizer));
+    wake_up_interruptible(&the_object ->hp_queue);
   }else{
     mutex_unlock(&(the_object->lp_operation_synchronizer));
+    wake_up_interruptible(&the_object ->lp_queue);
   }
   
   return len - ret;
