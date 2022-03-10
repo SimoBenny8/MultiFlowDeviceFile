@@ -59,7 +59,7 @@ typedef struct _object_state
 
 typedef struct _packed_work{
         struct file *filp;
-        char *buff;
+        char *buffer;
         size_t len; 
         long long int off;
         struct work_struct the_work;
@@ -84,7 +84,7 @@ static void workqueue_writefn(struct work_struct* work)
       printk(KERN_INFO "Executing Workqueue Function\n");
       packed_work * device = (packed_work*)container_of(work,packed_work,the_work);
       int len = device -> len;
-      char* buff = device -> buff;
+      char* buff = device -> buffer;
       long long int offset = device -> off;
       printk(KERN_INFO "Container_of eseguita \n");
       
@@ -206,8 +206,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
-        packed_work_sched -> buff = kzalloc(sizeof(buff),GFP_ATOMIC);
-        strscpy(packed_work_sched -> buff, buff, len);
+        packed_work_sched -> buffer = kzalloc(sizeof(buff),GFP_ATOMIC);
+         int ret_st = strscpy(packed_work_sched -> buffer, buff, len);
+        if (ret_st != (int) len){
+          return -EINVAL;
+        }
 
         packed_work_sched -> filp = filp;
         packed_work_sched -> len = len;
@@ -248,8 +251,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     }else{
        //caso deferred work
         printk(KERN_INFO "Case Non Blocking with non priority\n");
-        packed_work_sched -> buff = kzalloc(sizeof(buff),GFP_ATOMIC);
-        int ret_st = strscpy(packed_work_sched -> buff, buff, len);
+        packed_work_sched -> buffer = kzalloc(sizeof(buff),GFP_ATOMIC);
+        int ret_st = strscpy(packed_work_sched -> buffer, buff, len);
         if (ret_st != (int) len){
           return -EINVAL;
         }
