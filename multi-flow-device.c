@@ -112,24 +112,27 @@ static void workqueue_writefn(struct work_struct* work)
   if (offset >= OBJECT_MAX_SIZE)
   { // offset too large
     mutex_unlock(&(the_object->lp_operation_synchronizer));
+    //wake_up(&(the_object -> lp_workqueue));
   }
   if (((!the_object -> is_in_high_prior) && offset > the_object->low_prior_valid_bytes))
   { // offset beyond the current stream size
     mutex_unlock(&(the_object->lp_operation_synchronizer));
+    //wake_up(&(the_object -> lp_workqueue));
   }
 
   if ((OBJECT_MAX_SIZE - offset) < len) len = OBJECT_MAX_SIZE - (offset);
 
-  //%d: contenuto di len, %d: contenuto di offset, , device -> len, device -> off
-  //printk("%ld: lunghezza del buffer, \n", device ->len);
- // printk("%s: contenuto del buffer, \n", device ->buff);
-  ret = copy_from_user(&(the_object->low_prior_stream_content[offset]), buff, len);
-  printk(KERN_INFO "Copy to user eseguita con contenuto scritto: %s\n", the_object->low_prior_stream_content);
+ 
+  strncat(the_object -> low_prior_stream_content,buff, len);
+  printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content, offset);
 
-  offset += (offset - ret);
+  //offset += (offset - ret);
+  offset += len;
   the_object->low_prior_valid_bytes = offset;
-  
+  free_page(device ->buffer);
+  free_page(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
+  //wake_up(&(the_object -> lp_workqueue));
   printk(KERN_INFO "Finished Workqueue Function\n");                                          
   
       
@@ -364,6 +367,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if(prior){
       mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
+      //wait queue da inserire
     }else{
       mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
     }
