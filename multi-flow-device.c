@@ -83,6 +83,9 @@ static void workqueue_writefn(struct work_struct* work)
       object_state *the_object;
       printk(KERN_INFO "Executing Workqueue Function\n");
       packed_work * device = (packed_work*)container_of(work,packed_work,the_work);
+      int len = device -> len;
+      char* buff = device -> buff;
+      long long int offset = device -> off;
       printk(KERN_INFO "Container_of eseguita \n");
       
       int minor = get_minor(device -> filp);
@@ -103,28 +106,28 @@ static void workqueue_writefn(struct work_struct* work)
   
   //*(device -> off) = 0;
   //printk(KERN_DEBUG "aggiorna offset a zero: %lld\n", device -> off);
-  device -> off += the_object -> low_prior_valid_bytes;
+  offset += the_object -> low_prior_valid_bytes;
   printk(KERN_DEBUG "aggiorna offset eseguita: %lld\n", device -> off);
 
-  if ((device -> off) >= OBJECT_MAX_SIZE)
+  if (offset >= OBJECT_MAX_SIZE)
   { // offset too large
     mutex_unlock(&(the_object->lp_operation_synchronizer));
   }
-  if (((!the_object -> is_in_high_prior) && (device -> off) > the_object->low_prior_valid_bytes))
+  if (((!the_object -> is_in_high_prior) && offset > the_object->low_prior_valid_bytes))
   { // offset beyond the current stream size
     mutex_unlock(&(the_object->lp_operation_synchronizer));
   }
 
-  if ((OBJECT_MAX_SIZE - (device -> off)) < device -> len) device -> len = OBJECT_MAX_SIZE - (device -> off);
+  if ((OBJECT_MAX_SIZE - offset) < len) len = OBJECT_MAX_SIZE - (offset);
 
   //%d: contenuto di len, %d: contenuto di offset, , device -> len, device -> off
-  printk("%ld: lunghezza del buffer, \n", device ->len);
-  printk("%s: contenuto del buffer, \n", device ->buff);
-  ret = copy_from_user(&(the_object->low_prior_stream_content[device -> off]), device ->buff, device ->len);
+  //printk("%ld: lunghezza del buffer, \n", device ->len);
+ // printk("%s: contenuto del buffer, \n", device ->buff);
+  ret = copy_from_user(&(the_object->low_prior_stream_content[offset]), buff, len);
   printk(KERN_INFO "Copy to user eseguita con byte non scritti: %d\n", ret);
 
-  device -> off += ((device -> len) - ret);
-  the_object->low_prior_valid_bytes = device -> off;
+  offset += (offset - ret);
+  the_object->low_prior_valid_bytes = offset;
   
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   printk(KERN_INFO "Finished Workqueue Function\n");                                          
@@ -203,13 +206,10 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
       }else{
         //caso deferred work
-        packed_work_sched -> filp = NULL;
-        packed_work_sched -> buff = NULL;
-        packed_work_sched -> len = 0;
-        packed_work_sched -> off = NULL;
+        packed_work_sched -> buff = kzalloc(sizeof(buff),GFP_ATOMIC);
+        strscpy(packed_work_sched -> buff, buff, len);
 
         packed_work_sched -> filp = filp;
-        packed_work_sched -> buff = buff;
         packed_work_sched -> len = len;
         packed_work_sched -> off = *off;
         printk(KERN_INFO "Case Blocking with non priority\n");
@@ -248,13 +248,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     }else{
        //caso deferred work
         printk(KERN_INFO "Case Non Blocking with non priority\n");
-        packed_work_sched -> filp = NULL;
-        packed_work_sched -> buff = NULL;
-        packed_work_sched -> len = 0;
-        packed_work_sched -> off = NULL;
+        packed_work_sched -> buff = kzalloc(sizeof(buff),GFP_ATOMIC);
+        int ret_st = strscpy(packed_work_sched -> buff, buff, len);
+        if (ret_st != (int) len){
+          return -EINVAL;
+        }
 
         packed_work_sched -> filp = filp;
-        packed_work_sched -> buff = buff;
         packed_work_sched -> len = len;
         packed_work_sched -> off = *off;
 
