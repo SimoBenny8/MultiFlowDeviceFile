@@ -21,6 +21,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/types.h>
 
 #include "ioctl.h"
 
@@ -31,6 +32,31 @@ MODULE_AUTHOR("Simone Benedetti");
 #define DEVICE_NAME "multiflowdev" /* Device file name in /dev/ - not mandatory  */
 
 static int Major; /* Major number assigned to broadcast device driver */
+int params[2]; //minor, enable/disable
+int count;
+//module_param_array(params,int,&count,S_IRUSR|S_IWUSR);
+
+/*----------------------Module_param_cb()--------------------------------*/
+/*int notify_param(const char *val, const struct kernel_param *kp)
+{
+        int res = param_set_int(val, kp); // Use helper for write variable
+        if(res==0) {
+                printk(KERN_INFO "Call back function called...\n");
+                printk(KERN_INFO "New value of minor = %d\n", params[0]);
+                return 0;
+        }
+        return -1;
+}
+ 
+const struct kernel_param_ops my_param_ops = 
+{
+        .set = &notify_param, // Use our setter ...
+        .get = &param_get_int, // .. and standard getter
+};
+ 
+//module_param_cb(params, &my_param_ops, &params, S_IRUGO|S_IWUSR );*/
+
+
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 #define get_major(session) MAJOR(session->f_inode->i_rdev)
@@ -68,8 +94,14 @@ typedef struct _packed_work{
 
 #define MINORS 128
 
-static object_state objects[MINORS];
-//static struct workqueue_struct* lp_workqueue[MINORS];
+object_state objects[MINORS];
+int status[MINORS];
+int num_byte_hp[MINORS];
+int num_byte_lp[MINORS];
+int num_th_in_queue[MINORS];
+
+
+//module_param_array(status,int,NULL,0);
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
@@ -140,6 +172,25 @@ static void workqueue_writefn(struct work_struct* work)
   
       
 }
+
+static int num_th_in_waitqueue(wait_queue_head_t* queue){
+  int count = 0;
+  while(((queue-> head).next) != NULL){
+    count++;
+    (queue-> head).next = ((queue-> head).next).next;
+  }
+  return count;
+}
+
+static int num_th_in_workqueue(struct workqueue_struct* head){
+  int count = 0;
+  /*while((head->list).next != NULL){
+    count++;
+  }*/
+  count = (head->nr_pwqs_to_flush).count;
+  return count;
+}
+
 
 /* the actual driver */
 
@@ -360,8 +411,8 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (the_object->blocking)
   {
     if(prior){
-      ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
-      if (ret_mutex != 0){
+      //ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
+      //if (ret_mutex != 0){
        
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         
@@ -369,11 +420,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
         }
-      }
+      //}
       
     }else{
-      ret_mutex = mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
-      if (ret_mutex != 0){
+      //ret_mutex = mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
+      //if (ret_mutex != 0){
         
         int ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_lock_interruptible(&(the_object->lp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         
@@ -381,7 +432,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
         }
-      }
+     // }
     }
     
   }
@@ -389,27 +440,17 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if(prior){
       printk(KERN_INFO " Read case Non Blocking with priority\n");
-      //ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
-      //if (ret_mutex == EBUSY){
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) != EBUSY, (HZ)*the_object -> timeout);
-        if(!ret_wq){
-          printk("Timeout expired\n");
-          return -ETIMEDOUT;
-        }
-     // }
-    }else{
-      ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer);
+      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
       if (ret_mutex == EBUSY){
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
-        if(!ret_wq){
-          printk("Timeout expired\n");
-          return -ETIMEDOUT;
-        }
-      /*if (ret_mutex == EBUSY){
-        return -30;
-      }*/
-    }
+        return -EBUSY;
+      }
+    }else{
+      ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer));
+      if (ret_mutex == EBUSY){
+        return -EBUSY;
+      }
     
+    }
   }
   if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   {
@@ -440,10 +481,8 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     the_object->high_prior_stream_content += len; //prova cancellazione contenuto
     the_object -> high_prior_valid_bytes -= len;
   }
-  else
-  {
+  else{
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
-    //the_object->low_prior_stream_content[0] = the_object->low_prior_stream_content[*off + ret];
     the_object->low_prior_stream_content += len; //prova cancellazione contenuto
     the_object -> low_prior_valid_bytes -= len;
   }
