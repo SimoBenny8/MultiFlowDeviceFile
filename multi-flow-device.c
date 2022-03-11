@@ -360,9 +360,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (the_object->blocking)
   {
     if(prior){
-      mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
+      ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
       if (ret_mutex != 0){
-        //init_waitqueue_entry(&wait, current);
+       
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         
         if(!ret_wq){
@@ -388,13 +388,26 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   else
   {
     if(prior){
-      if(!mutex_trylock(&(the_object->hp_operation_synchronizer))){
-        return -EBUSY;
-      }
+      printk(KERN_INFO " Read case Non Blocking with priority\n");
+      //ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
+      //if (ret_mutex == EBUSY){
+        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) != EBUSY, (HZ)*the_object -> timeout);
+        if(!ret_wq){
+          printk("Timeout expired\n");
+          return -ETIMEDOUT;
+        }
+     // }
     }else{
-      if(!mutex_trylock(&(the_object->lp_operation_synchronizer))){
-        return -EBUSY;
-    }
+      ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer);
+      if (ret_mutex == EBUSY){
+        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+        if(!ret_wq){
+          printk("Timeout expired\n");
+          return -ETIMEDOUT;
+        }
+      /*if (ret_mutex == EBUSY){
+        return -30;
+      }*/
     }
     
   }
