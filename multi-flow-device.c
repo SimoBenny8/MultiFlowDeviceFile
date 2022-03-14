@@ -23,7 +23,7 @@
 #include <linux/delay.h>
 #include <linux/types.h>
 #include <asm/atomic.h>
-#include <linux/stdatomic.h>
+
 
 #include "ioctl.h"
 
@@ -34,30 +34,6 @@ MODULE_AUTHOR("Simone Benedetti");
 #define DEVICE_NAME "multiflowdev" /* Device file name in /dev/ - not mandatory  */
 
 static int Major; /* Major number assigned to broadcast device driver */
-
-//module_param_array(params,int,&count,S_IRUSR|S_IWUSR);
-
-/*----------------------Module_param_cb()--------------------------------*/
-/*int notify_param(const char *val, const struct kernel_param *kp)
-{
-        int res = param_set_int(val, kp); // Use helper for write variable
-        if(res==0) {
-                printk(KERN_INFO "Call back function called...\n");
-                printk(KERN_INFO "New value of minor = %d\n", params[0]);
-                return 0;
-        }
-        return -1;
-}
- 
-const struct kernel_param_ops my_param_ops = 
-{
-        .set = &notify_param, // Use our setter ...
-        .get = &param_get_int, // .. and standard getter
-};
- 
-//module_param_cb(params, &my_param_ops, &params, S_IRUGO|S_IWUSR ); */
-
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 #define get_major(session) MAJOR(session->f_inode->i_rdev)
@@ -81,7 +57,6 @@ typedef struct _object_state
   int is_in_high_prior;
   int blocking;
   int32_t timeout;
-  char flag;
 } object_state;
 
 typedef struct _packed_work{
@@ -107,8 +82,6 @@ module_param_array(num_byte_hp,int,NULL,S_IRUSR|S_IWUSR);
 module_param_array(num_byte_lp,int,NULL,S_IRUSR|S_IWUSR);
 module_param_array(num_th_in_queue_hp,int,NULL,S_IRUSR|S_IWUSR);
 module_param_array(num_th_in_queue_lp,int,NULL,S_IRUSR|S_IWUSR);
-
-
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
@@ -166,9 +139,8 @@ static void workqueue_writefn(struct work_struct* work)
 
  
   strncat(the_object -> low_prior_stream_content,buff, len);
-  printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content);
+  //printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content);
 
-  //offset += (offset - ret);
   offset += len;
   the_object->low_prior_valid_bytes = offset;
   num_byte_lp[minor] += len;
@@ -343,9 +315,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   { // offset too large
     
     if(prior){
+      num_th_in_queue_hp[minor] -= 1;
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
+      num_th_in_queue_lp[minor] -= 1;
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
@@ -354,9 +328,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   { // offset beyond the current stream size
     if(prior){
+      num_th_in_queue_hp[minor] -= 1;
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
+      num_th_in_queue_lp[minor] -= 1;
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
@@ -368,11 +344,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (the_object->is_in_high_prior)
   {
     ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
+    num_th_in_queue_hp[minor] -= 1;
     //num_byte_hp[minor] = len;
   }
   else
   {
     ret = copy_from_user(&(the_object->low_prior_stream_content[*off]), buff, len);
+    num_th_in_queue_lp[minor] -= 1;
     //num_byte_lp[minor] = len;
   }
 
@@ -420,7 +398,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       //if (ret_mutex != 0){
        
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
-        
+        num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
@@ -432,7 +410,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       //if (ret_mutex != 0){
         
         int ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_lock_interruptible(&(the_object->lp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
-        
+        num_th_in_queue_lp[minor] += 1;
         if(!ret_wq){
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
@@ -451,6 +429,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       }
     }else{
       ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer));
+
       if (ret_mutex == EBUSY){
         return -EBUSY;
       }
@@ -460,9 +439,11 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (((!the_object -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (the_object -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   {
     if(prior){
+      num_th_in_queue_hp[minor] -= 1;
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
+      num_th_in_queue_lp[minor] -= 1;
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
@@ -483,11 +464,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (the_object->is_in_high_prior)
   {
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
+    num_th_in_queue_hp[minor] -= 1;
     the_object->high_prior_stream_content += len; //prova cancellazione contenuto
     the_object -> high_prior_valid_bytes -= len;
   }
   else{
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
+    num_th_in_queue_lp[minor] -= 1;
     the_object->low_prior_stream_content += len; //prova cancellazione contenuto
     the_object -> low_prior_valid_bytes -= len;
   }
