@@ -22,6 +22,8 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/types.h>
+#include <asm/atomic.h>
+#include <linux/stdatomic.h>
 
 #include "ioctl.h"
 
@@ -32,8 +34,7 @@ MODULE_AUTHOR("Simone Benedetti");
 #define DEVICE_NAME "multiflowdev" /* Device file name in /dev/ - not mandatory  */
 
 static int Major; /* Major number assigned to broadcast device driver */
-int params[2]; //minor, enable/disable
-int count;
+
 //module_param_array(params,int,&count,S_IRUSR|S_IWUSR);
 
 /*----------------------Module_param_cb()--------------------------------*/
@@ -54,7 +55,7 @@ const struct kernel_param_ops my_param_ops =
         .get = &param_get_int, // .. and standard getter
 };
  
-//module_param_cb(params, &my_param_ops, &params, S_IRUGO|S_IWUSR );*/
+//module_param_cb(params, &my_param_ops, &params, S_IRUGO|S_IWUSR ); */
 
 
 
@@ -98,10 +99,16 @@ object_state objects[MINORS];
 int status[MINORS];
 int num_byte_hp[MINORS];
 int num_byte_lp[MINORS];
-int num_th_in_queue[MINORS];
+int num_th_in_queue_hp[MINORS];
+int num_th_in_queue_lp[MINORS];
+
+module_param_array(status,int,NULL,S_IRUSR|S_IWUSR);
+module_param_array(num_byte_hp,int,NULL,S_IRUSR|S_IWUSR);
+module_param_array(num_byte_lp,int,NULL,S_IRUSR|S_IWUSR);
+module_param_array(num_th_in_queue_hp,int,NULL,S_IRUSR|S_IWUSR);
+module_param_array(num_th_in_queue_lp,int,NULL,S_IRUSR|S_IWUSR);
 
 
-//module_param_array(status,int,NULL,0);
 
 #define OBJECT_MAX_SIZE (4096) // just one page
 
@@ -164,31 +171,16 @@ static void workqueue_writefn(struct work_struct* work)
   //offset += (offset - ret);
   offset += len;
   the_object->low_prior_valid_bytes = offset;
+  num_byte_lp[minor] += len;
+  num_th_in_queue_lp[minor] -= 1;
   free_page((unsigned long)(device ->buffer));
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   wake_up(&(the_object -> lp_queue));
-  printk(KERN_INFO "Finished Workqueue Function\n");                                          
+  printk(KERN_INFO "Finished Workqueue Function\n");  
+                                          
   
       
-}
-
-static int num_th_in_waitqueue(wait_queue_head_t* queue){
-  int count = 0;
-  while(((queue-> head).next) != NULL){
-    count++;
-    (queue-> head).next = ((queue-> head).next).next;
-  }
-  return count;
-}
-
-static int num_th_in_workqueue(struct workqueue_struct* head){
-  int count = 0;
-  /*while((head->list).next != NULL){
-    count++;
-  }*/
-  count = (head->nr_pwqs_to_flush).count;
-  return count;
 }
 
 
@@ -204,6 +196,11 @@ static int dev_open(struct inode *inode, struct file *file)
   {
     return -ENODEV;
   }
+  if(status[minor] == 0){
+    
+    printk("Device disabled \n");
+    return -1;
+  }
 
   printk("%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
   // device opened by a default nop
@@ -215,6 +212,7 @@ static int dev_release(struct inode *inode, struct file *file)
 
   int minor;
   minor = get_minor(file);
+
 
   printk("%s: device file closed\n", MODNAME);
   // device closed by default nop
@@ -254,7 +252,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       if (ret_mutex != 0){
         //init_waitqueue_entry(&wait, current);
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
-        
+        num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
@@ -280,6 +278,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
               
 
         int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
+        num_th_in_queue_lp[minor] += 1;
         if(!ret_queue){
           return -EALREADY;
         }
@@ -298,6 +297,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
       if (ret_mutex == EBUSY){
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+        num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
@@ -322,6 +322,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
 
         int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
+        num_th_in_queue_lp[minor] += 1; //fare check
         if(!ret_queue){
           return -EALREADY;
         }
@@ -367,18 +368,22 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (the_object->is_in_high_prior)
   {
     ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
+    //num_byte_hp[minor] = len;
   }
   else
   {
     ret = copy_from_user(&(the_object->low_prior_stream_content[*off]), buff, len);
+    //num_byte_lp[minor] = len;
   }
 
   *off += (len - ret);
 
   if(prior){
     the_object->high_prior_valid_bytes = *off;
+     num_byte_hp[minor] += len;
   }else{
     the_object->low_prior_valid_bytes = *off;
+    num_byte_lp[minor] += len;
   }
   
 
@@ -557,12 +562,14 @@ int init_module(void)
 {
 
   int i;
-  
-
   // initialize the drive internal state
   for (i = 0; i < MINORS; i++)
   {
-
+    status[i] = 1;
+    num_byte_hp[i] = 0;
+    num_byte_lp[i] = 0;
+    num_th_in_queue_hp[i] = 0;
+    num_th_in_queue_lp[i] = 0;
     mutex_init(&(objects[i].lp_operation_synchronizer));
     mutex_init(&(objects[i].hp_operation_synchronizer));
     init_waitqueue_head(&(objects[i].hp_queue));
@@ -572,7 +579,6 @@ int init_module(void)
 		printk( "create workqueue failed\n" );
 		
 	  }
-    //INIT_WORK(&(objects[i].lp_workqueue),workqueue_writefn);
     objects[i].blocking = 0;
     objects[i].timeout = 0;
     objects[i].low_prior_valid_bytes = 0;
