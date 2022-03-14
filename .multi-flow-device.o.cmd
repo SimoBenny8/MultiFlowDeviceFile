@@ -926,6 +926,7 @@ deps_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o := \
   include/linux/delay.h \
   arch/x86/include/asm/delay.h \
   include/asm-generic/delay.h \
+  /usr/lib/gcc/x86_64-linux-gnu/7/include/stdatomic.h \
   /home/simone/Documents/MultiFlowDeviceFile/ioctl.h \
 
 /home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o: $(deps_/home/simone/Documents/MultiFlowDeviceFile/multi-flow-device.o)

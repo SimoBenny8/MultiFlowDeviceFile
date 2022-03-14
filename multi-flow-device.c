@@ -23,7 +23,7 @@
 #include <linux/delay.h>
 #include <linux/types.h>
 #include <asm/atomic.h>
-
+#include <stdatomic.h>
 
 #include "ioctl.h"
 
@@ -88,7 +88,7 @@ module_param_array(num_th_in_queue_lp,int,NULL,S_IRUSR|S_IWUSR);
 static void workqueue_writefn(struct work_struct* work)
 {
       
-      int ret;
+     // int ret;
       
   
       //prendere lock e differenziare se bloccante o no
@@ -211,8 +211,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     return -ENOSPC;
   }
   printk("%s: work buffer allocation success - address is %p\n",MODNAME,packed_work_sched);
-  //packed_work_sched.the_work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
-  // printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
+  
+  printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
   if (the_object->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
   { 
@@ -220,8 +220,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       //caso con waitqueue
       printk(KERN_INFO "Case Blocking with priority\n");
 
-      ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
-      if (ret_mutex != 0){
+      //ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
+      //if (ret_mutex != 0){
         //init_waitqueue_entry(&wait, current);
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         num_th_in_queue_hp[minor] += 1;
@@ -229,7 +229,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
           printk("Timeout expired\n");
           return -ETIMEDOUT;
         }
-      }
+     // }
 
       }else{
         //caso deferred work
@@ -250,7 +250,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
               
 
         int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
-        num_th_in_queue_lp[minor] += 1;
+        atomic_fetch_add(&num_th_in_queue_lp[minor],1);
+        //num_th_in_queue_lp[minor] += 1;
         if(!ret_queue){
           return -EALREADY;
         }
@@ -266,15 +267,15 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if(prior){
       //caso con waitqueue
       printk(KERN_INFO "Case Non Blocking with priority\n");
-      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
-      if (ret_mutex == EBUSY){
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
+      //ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
+      //if (ret_mutex == EBUSY){
+        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)) != EBUSY, (HZ)*the_object -> timeout);
         num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
         }
-      }
+      //}
 
     }else{
        //caso deferred work
@@ -294,7 +295,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
 
         int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
-        num_th_in_queue_lp[minor] += 1; //fare check
+        atomic_fetch_add(&num_th_in_queue_lp[minor],1);
+        //num_th_in_queue_lp[minor] += 1; //fare check
         if(!ret_queue){
           return -EALREADY;
         }
@@ -358,10 +360,10 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   if(prior){
     the_object->high_prior_valid_bytes = *off;
-     num_byte_hp[minor] += len;
+     num_byte_hp[minor] += (len - ret);
   }else{
     the_object->low_prior_valid_bytes = *off;
-    num_byte_lp[minor] += len;
+    num_byte_lp[minor] += (len - ret);
   }
   
 
@@ -394,28 +396,24 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (the_object->blocking)
   {
     if(prior){
-      //ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
-      //if (ret_mutex != 0){
-       
+      
         int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_lock_interruptible(&(the_object->hp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
         }
-      //}
+      
       
     }else{
-      //ret_mutex = mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
-      //if (ret_mutex != 0){
-        
+     
         int ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_lock_interruptible(&(the_object->lp_operation_synchronizer)) == 0, (HZ)*the_object -> timeout);
         num_th_in_queue_lp[minor] += 1;
         if(!ret_wq){
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
         }
-     // }
+     
     }
     
   }
@@ -465,14 +463,16 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
     num_th_in_queue_hp[minor] -= 1;
+    num_byte_hp[minor] -= (len - ret);
     the_object->high_prior_stream_content += len; //prova cancellazione contenuto
-    the_object -> high_prior_valid_bytes -= len;
+    the_object -> high_prior_valid_bytes -= (len - ret);
   }
   else{
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
     num_th_in_queue_lp[minor] -= 1;
+    num_byte_lp[minor] -= (len - ret);
     the_object->low_prior_stream_content += len; //prova cancellazione contenuto
-    the_object -> low_prior_valid_bytes -= len;
+    the_object -> low_prior_valid_bytes -= (len - ret);
   }
 
   *off += (len - ret);
