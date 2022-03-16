@@ -24,6 +24,7 @@
 #include <linux/types.h>
 #include <asm/atomic.h>
 #include <stdatomic.h>
+#include <linux/string.h>
 
 #include "ioctl.h"
 
@@ -380,6 +381,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 }
 
 //sempre sincrone
+//TODO: controllare se read viene chiamata prima della write (per questo non legge)
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 {
 
@@ -426,6 +428,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
         return -EBUSY;
       }
     }else{
+      printk(KERN_INFO " Read case Non Blocking with non priority\n");
       ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer));
 
       if (ret_mutex == EBUSY){
@@ -461,17 +464,24 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
   if (the_object->is_in_high_prior)
   {
+    //logica: salva in un buff tampone la residua stringa, azzera buf e poi copia residua in buf
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
     num_th_in_queue_hp[minor] -= 1;
     num_byte_hp[minor] -= (len - ret);
-    the_object->high_prior_stream_content += len; //prova cancellazione contenuto
+    printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len-ret);
+    memset(the_object->high_prior_stream_content,0,len-ret);
+    printk("Stream dopo memset: %s\n", the_object->high_prior_stream_content);
+    the_object->high_prior_stream_content += (len-ret); //prova cancellazione contenuto
     the_object -> high_prior_valid_bytes -= (len - ret);
   }
   else{
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
     num_th_in_queue_lp[minor] -= 1;
     num_byte_lp[minor] -= (len - ret);
-    the_object->low_prior_stream_content += len; //prova cancellazione contenuto
+    printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
+    memset(the_object->low_prior_stream_content,0,len-ret);
+    printk("Stream dopo memset: %s\n", the_object->low_prior_stream_content);
+    the_object->low_prior_stream_content += (len - ret); //prova cancellazione contenuto
     the_object -> low_prior_valid_bytes -= (len - ret);
   }
 

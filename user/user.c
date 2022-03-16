@@ -9,7 +9,7 @@
 
 int i;
 char buff[4096];
-#define DATA "ciao a tutti\n"
+#define DATA "ciao"
 #define SIZE strlen(DATA)
 
 void * the_thread_write(void* path){
@@ -28,9 +28,8 @@ void * the_thread_write(void* path){
 	}
 	printf("device %s successfully opened\n",device);
 	int32_t sec = 1;
-	ioctl(fd,LP_B,(int32_t*) &sec);
-	//for(i=0;i<5;i++) 
-	write(fd,DATA,SIZE);
+	ioctl(fd,HP_B,(int32_t*) &sec);
+	for(i=0;i<5;i++) write(fd,DATA,SIZE);
 	close(fd);
 	return NULL;
 
@@ -40,10 +39,9 @@ void * the_thread_read(void* path){
 
 	char* device;
 	int fd,retval;
-	char *buffer;
+	char *buffer = malloc(4096);
 
 	device = (char*)path;
-	sleep(1);
 
 	printf("opening device %s\n",device);
 	fd = open(device,O_RDWR|O_APPEND);
@@ -53,7 +51,7 @@ void * the_thread_read(void* path){
 	}
 	printf("device %s successfully opened\n",device);
 	int32_t sec = 1;
-	ioctl(fd,LP_NB,(int32_t*) &sec);
+	ioctl(fd,HP_B,(int32_t*) &sec);
 	while ((retval = read(fd, buffer, 1)) > 0)
         printf("%c", *buffer);    
     if (retval < 0) {
@@ -85,11 +83,11 @@ int main(int argc, char** argv){
      printf("creating %d minors for device %s with major %d\n",minors,path,major);
 
      for(i=0;i<minors;i++){
-	sprintf(buff,"mknod %s%d c %d %i\n",path,i,major,i);
-	system(buff);
-	sprintf(buff,"%s%d",path,i);
-	pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-	//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		sprintf(buff,"mknod %s%d c %d %i\n",path,i,major,i);
+		system(buff);
+		sprintf(buff,"%s%d",path,i);
+		pthread_create(&tid,NULL,the_thread_write,strdup(buff));
+		pthread_create(&tid,NULL,the_thread_read,strdup(buff));
      }
 
      pause();
