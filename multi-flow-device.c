@@ -92,13 +92,13 @@ module_param_array(num_th_in_queue_lp,int,NULL,S_IRUSR|S_IWUSR);
 static void workqueue_writefn(struct work_struct* work)
 {
       
-     // int ret;
       packed_work * device;
       session_struct *session;
       int minor;
       int len;
       char* buff;
       long long int offset;
+      int ret;
       //prendere lock e differenziare se bloccante o no
       object_state *the_object;
       printk(KERN_INFO "Executing Workqueue Function\n");
@@ -120,15 +120,22 @@ static void workqueue_writefn(struct work_struct* work)
        if (session -> blocking) 
        {
          //mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
-        int ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ)*(session -> timeout));
-        num_th_in_queue_hp[minor] += 1;
-        if(!ret_wq){
+        atomic_fetch_add(num_th_in_queue_lp[minor],1);
+        ret = wait_event_timeout(the_object -> lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ)*(session -> timeout));
+        atomic_fetch_sub(num_th_in_queue_hp[minor],1);
+        //num_th_in_queue_hp[minor] += 1;
+        if(!ret){
           printk("Timeout expired\n");
+          return NULL;
         }
 
-         printk(KERN_INFO "Preso lock\n");
+        printk(KERN_INFO "Preso lock\n");
        } else{
-         mutex_trylock(&(the_object->lp_operation_synchronizer));
+         
+         ret = mutex_trylock(&(the_object->lp_operation_synchronizer));
+         if (ret == EBUSY){
+           printk("Lock busy\n");
+         }
          printk(KERN_INFO "Preso lock\n");
        }
   
@@ -155,12 +162,11 @@ static void workqueue_writefn(struct work_struct* work)
 
  
   strncat(the_object -> low_prior_stream_content,buff, len);
-  //printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content);
+  printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content, offset);
 
   offset += len;
   the_object->low_prior_valid_bytes = offset;
   num_byte_lp[minor] += len;
-  num_th_in_queue_lp[minor] -= 1;
   free_page((unsigned long)(device ->buffer));
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
@@ -245,9 +251,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       //caso con waitqueue
       printk(KERN_INFO "Case Blocking with priority\n");
 
-      
+        atomic_fetch_add(num_th_in_queue_hp[minor],1);      
         ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
-        num_th_in_queue_hp[minor] += 1;
+        atomic_fetch_sub(num_th_in_queue_hp[minor],1);
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
@@ -271,9 +277,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
               
-
-        ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         atomic_fetch_add(&num_th_in_queue_lp[minor],1);
+        ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
+        atomic_fetch_sub(&num_th_in_queue_lp[minor],1);
         //num_th_in_queue_lp[minor] += 1;
         if(!ret_queue){
           return -EALREADY;
@@ -290,8 +296,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if(prior){
       //caso con waitqueue
       printk(KERN_INFO "Case Non Blocking with priority\n");
+        atomic_fetch_add(num_th_in_queue_hp[minor],1);
         ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
-        num_th_in_queue_hp[minor] += 1;
+        atomic_fetch_sub(num_th_in_queue_hp[minor],1);
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
@@ -315,8 +322,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
 
+        atomic_fetch_add(num_th_in_queue_lp[minor],1);
         ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
-        atomic_fetch_add(&num_th_in_queue_lp[minor],1);
+        atomic_fetch_sub(&num_th_in_queue_lp[minor],1);
         //num_th_in_queue_lp[minor] += 1; //fare check
         if(!ret_queue){
           return -EALREADY;
@@ -338,11 +346,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   { // offset too large
     
     if(prior){
-      num_th_in_queue_hp[minor] -= 1;
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
-      num_th_in_queue_lp[minor] -= 1;
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
@@ -351,11 +357,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (((!session -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (session -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   { // offset beyond the current stream size
     if(prior){
-      num_th_in_queue_hp[minor] -= 1;
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
-      num_th_in_queue_lp[minor] -= 1;
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
@@ -367,13 +371,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (session->is_in_high_prior)
   {
     ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
-    num_th_in_queue_hp[minor] -= 1;
+    //num_th_in_queue_hp[minor] -= 1;
     //num_byte_hp[minor] = len;
   }
   else
   {
     ret = copy_from_user(&(the_object->low_prior_stream_content[*off]), buff, len);
-    num_th_in_queue_lp[minor] -= 1;
+    //num_th_in_queue_lp[minor] -= 1;
     //num_byte_lp[minor] = len;
   }
 
@@ -381,7 +385,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   if(prior){
     the_object->high_prior_valid_bytes = *off;
-     num_byte_hp[minor] += (len - ret);
+    num_byte_hp[minor] += (len - ret);
   }else{
     the_object->low_prior_valid_bytes = *off;
     num_byte_lp[minor] += (len - ret);
@@ -409,6 +413,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   int ret;
   int prior;
   int ret_mutex;
+  int ret_wq;
   object_state *the_object;
   session_struct *session;
 
@@ -421,9 +426,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (session->blocking)
   {
     if(prior){
-      
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
-        num_th_in_queue_hp[minor] += 1;
+
+        atomic_fetch_add(num_th_in_queue_hp[minor],1);
+        ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
+        atomic_fetch_sub(num_th_in_queue_hp[minor],1);
         if(!ret_wq){
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
@@ -431,9 +437,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       
       
     }else{
-     
-        int ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ)*session -> timeout);
-        num_th_in_queue_lp[minor] += 1;
+        atomic_fetch_add(num_th_in_queue_lp[minor],1);
+        ret_wq = wait_event_timeout(the_object -> lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ)*session -> timeout);
+        atomic_fetch_sub(num_th_in_queue_hp[minor],1);
         if(!ret_wq){
           printk("Timeout wait queue Read op expired\n");
           return -ETIMEDOUT;
@@ -463,11 +469,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (((!session -> is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (session -> is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   {
     if(prior){
-      num_th_in_queue_hp[minor] -= 1;
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up_interruptible(&the_object ->hp_queue);
     }else{
-      num_th_in_queue_lp[minor] -= 1;
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up_interruptible(&the_object ->lp_queue);
     }
@@ -486,20 +490,33 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   }
 
   if (session->is_in_high_prior)
-  {
+  { 
+    char* buffer_tmp;
     //logica: salva in un buff tampone la residua stringa, azzera buf e poi copia residua in buf
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
-    num_th_in_queue_hp[minor] -= 1;
+    buffer_tmp = kzalloc((strlen(the_object->high_prior_stream_conten)) - (len-ret)), GFP_KERNEL);
+    char *p = the_object->high_prior_stream_content + (len - ret);
+    memcpy(buffer_tmp,p, strlen(p));
+    memset(the_object->high_prior_stream_content,0,strlen(the_object->high_prior_stream_content);
+    memcpy(the_object->high_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
+    kfree(buffer_tmp);
     num_byte_hp[minor] -= (len - ret);
+    
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len-ret);
-    memset(the_object->high_prior_stream_content,0,len-ret);
+    
     printk("Stream dopo memset: %s\n", the_object->high_prior_stream_content);
-    the_object->high_prior_stream_content += (len-ret); //prova cancellazione contenuto
     the_object -> high_prior_valid_bytes -= (len - ret);
   }
   else{
+    char* buffer_tmp;
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
-    num_th_in_queue_lp[minor] -= 1;
+    buffer_tmp = kzalloc((strlen(the_object->low_prior_stream_conten)) - (len-ret)), GFP_KERNEL);
+    char *p = the_object->low_prior_stream_content + (len - ret);
+    memcpy(buffer_tmp,p, strlen(p));
+    memset(the_object->low_prior_stream_content,0,strlen(*(the_object->low_prior_stream_content));
+    memcpy(the_object->low_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
+
+
     num_byte_lp[minor] -= (len - ret);
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
     memset(the_object->low_prior_stream_content,0,len-ret);
@@ -536,28 +553,28 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
     session ->is_in_high_prior = 1;
     session ->blocking = 1;
     session ->timeout = (int32_t) param;
-    printk("Inserimento parametri effettuato\n");
+    printk("Inserimento parametri HP_B effettuato\n");
     break;
 
   case HP_NB:
     session ->is_in_high_prior = 1;
     session ->blocking = 0;
     session ->timeout = (int32_t) param;
-    printk("Inserimento parametri effettuato\n");
+    printk("Inserimento parametri HP_NB effettuato\n");
     break;
   
    case LP_NB:
     session ->is_in_high_prior = 0;
     session ->blocking = 0;
     session ->timeout = (int32_t) param;
-    printk("Inserimento parametri effettuato\n");
+    printk("Inserimento parametri LP_NB effettuato\n");
     break;
   
    case LP_B:
     session ->is_in_high_prior = 0;
     session ->blocking = 1;
     session ->timeout = (int32_t) param;
-    printk("Inserimento parametri effettuato\n");
+    printk("Inserimento parametri LP_B effettuato\n");
     break;
   
   }

@@ -41,6 +41,11 @@ void * the_thread_read(void* path){
 	int fd,retval;
 	char *buffer = malloc(4096);
 
+	if(buffer == NULL){
+		printf("Error alloc buffer\n");
+		return NULL;
+	}
+
 	device = (char*)path;
 
 	printf("opening device %s\n",device);
@@ -50,14 +55,11 @@ void * the_thread_read(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 1;
+	int32_t sec = 0;
 	ioctl(fd,HP_B,(int32_t*) &sec);
-	while ((retval = read(fd, buffer, 1)) > 0)
-        printf("%c", *buffer);    
-    if (retval < 0) {
-        perror("\nRead failure");
-        exit(1);
-    }
+	read(fd, buffer, 2);
+    printf("buffer: %s", buffer);    
+    
 	close(fd);
 	return NULL;
 
@@ -86,8 +88,8 @@ int main(int argc, char** argv){
 		sprintf(buff,"mknod %s%d c %d %i\n",path,i,major,i);
 		system(buff);
 		sprintf(buff,"%s%d",path,i);
-		pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-		//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		//pthread_create(&tid,NULL,the_thread_write,strdup(buff));
+		pthread_create(&tid,NULL,the_thread_read,strdup(buff));
      }
 
      pause();
