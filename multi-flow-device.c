@@ -93,20 +93,24 @@ static void workqueue_writefn(struct work_struct* work)
 {
       
      // int ret;
-      
-  
+      packed_work * device;
+      session_struct *session;
+      int minor;
+      int len;
+      char* buff;
+      long long int offset;
       //prendere lock e differenziare se bloccante o no
       object_state *the_object;
       printk(KERN_INFO "Executing Workqueue Function\n");
-      packed_work * device = (packed_work*)container_of(work,packed_work,the_work);
-      session_struct *session = (device -> filp) -> private_data;
+      device = (packed_work*)container_of(work,packed_work,the_work);
+      session = (device -> filp) -> private_data;
 
-      int len = device -> len;
-      char* buff = device -> buffer;
-      long long int offset = device -> off;
+      len = device -> len;
+      buff = device -> buffer;
+      offset = device -> off;
       printk(KERN_INFO "Container_of eseguita \n");
       
-      int minor = get_minor(device -> filp);
+      minor = get_minor(device -> filp);
       printk(KERN_INFO "Get minor eseguita\n");
       if(minor < 0){
         printk(KERN_INFO "Error minor work queue\n");
@@ -120,7 +124,6 @@ static void workqueue_writefn(struct work_struct* work)
         num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout expired\n");
-          return -ETIMEDOUT;
         }
 
          printk(KERN_INFO "Preso lock\n");
@@ -180,7 +183,7 @@ static int dev_open(struct inode *inode, struct file *file)
   file -> private_data = (session_struct*) kzalloc(sizeof(session_struct), GFP_KERNEL);
   ((session_struct*) (file->private_data))-> timeout = 0;
   ((session_struct*) (file->private_data)) -> blocking = 0;
-   ((session_struct*) (file->private_data)) -> is_in_high_prior = 0;
+  ((session_struct*) (file->private_data)) -> is_in_high_prior = 0;
 
   if (minor >= MINORS)
   {
@@ -214,9 +217,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   int minor = get_minor(filp);
   int ret;
-  int ret_mutex;
   int prior;
+  int ret_wq;
+  int ret_queue;
   packed_work* packed_work_sched;
+  session_struct *session;
 
   //wait_queue_head_t data;
   object_state *the_object;
@@ -224,7 +229,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   the_object = objects + minor;
   
   packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
-  session_struct *session = filp -> private_data;
+  session = filp -> private_data;
   prior = session ->is_in_high_prior;
 
   if(packed_work_sched == NULL){
@@ -240,22 +245,20 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       //caso con waitqueue
       printk(KERN_INFO "Case Blocking with priority\n");
 
-      //ret_mutex = mutex_lock_interruptible(&(the_object->hp_operation_synchronizer));
-      //if (ret_mutex != 0){
-        //init_waitqueue_entry(&wait, current);
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
+      
+        ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
         num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
         }
-     // }
+     
 
       }else{
         //caso deferred work
         printk(KERN_INFO "Case Blocking with non priority\n");
         packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
-        int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
+        ret = copy_from_user(packed_work_sched -> buffer, buff,len);
         if (ret == (int) len){
           return -ENOBUFS;
         }
@@ -269,7 +272,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
               
 
-        int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
+        ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         atomic_fetch_add(&num_th_in_queue_lp[minor],1);
         //num_th_in_queue_lp[minor] += 1;
         if(!ret_queue){
@@ -287,21 +290,19 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if(prior){
       //caso con waitqueue
       printk(KERN_INFO "Case Non Blocking with priority\n");
-      //ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));//controllare EBUSY
-      //if (ret_mutex == EBUSY){
-        int ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
+        ret_wq = wait_event_timeout(the_object -> hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session -> timeout);
         num_th_in_queue_hp[minor] += 1;
         if(!ret_wq){
           printk("Timeout expired\n");
           return -ETIMEDOUT;
         }
-      //}
+      
 
     }else{
        //caso deferred work
         printk(KERN_INFO "Case Non Blocking with non priority\n");
         packed_work_sched -> buffer = (char *)__get_free_page(GFP_KERNEL);
-        int ret = copy_from_user(packed_work_sched -> buffer, buff,len);
+        ret = copy_from_user(packed_work_sched -> buffer, buff,len);
         if (ret == len){
           return -ENOBUFS;
         }
@@ -314,7 +315,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
         INIT_WORK(&(packed_work_sched -> the_work),workqueue_writefn);
 
-        int ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
+        ret_queue = queue_work(the_object -> lp_workqueue,&(packed_work_sched -> the_work));
         atomic_fetch_add(&num_th_in_queue_lp[minor],1);
         //num_th_in_queue_lp[minor] += 1; //fare check
         if(!ret_queue){
@@ -409,9 +410,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   int prior;
   int ret_mutex;
   object_state *the_object;
+  session_struct *session;
 
   the_object = objects + minor;
-  session_struct *session = filp -> private_data;
+  session = filp -> private_data;
   
   prior = session -> is_in_high_prior;
   printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));

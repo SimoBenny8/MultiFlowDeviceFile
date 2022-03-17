@@ -87,7 +87,7 @@ int main(int argc, char** argv){
 		system(buff);
 		sprintf(buff,"%s%d",path,i);
 		pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-		pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
      }
 
      pause();
