@@ -562,18 +562,27 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
     printk("Inserimento parametri HP_NB effettuato\n");
     break;
   
-   case LP_NB:
+  case LP_NB:
     session ->is_in_high_prior = 0;
     session ->blocking = 0;
     session ->timeout = (int32_t) param;
     printk("Inserimento parametri LP_NB effettuato\n");
     break;
   
-   case LP_B:
+  case LP_B:
     session ->is_in_high_prior = 0;
     session ->blocking = 1;
     session ->timeout = (int32_t) param;
     printk("Inserimento parametri LP_B effettuato\n");
+    break;
+
+  case EN_DIS:
+    status[minor] = (int) param;
+    if (status[minor] == 1) {
+      printk("Device with minor %d  is set to enable", minor);
+    }else{
+      printk("Device with minor %d  is set to disable", minor);
+    }
     break;
   
   }
