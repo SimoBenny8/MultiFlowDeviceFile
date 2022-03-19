@@ -108,15 +108,12 @@ static void workqueue_writefn(struct work_struct* work)
       len = device -> len;
       buff = device -> buffer;
       offset = device -> off;
-      printk(KERN_INFO "Container_of eseguita \n");
       
       minor = get_minor(device -> filp);
-      printk(KERN_INFO "Get minor eseguita\n");
       if(minor < 0){
         printk(KERN_INFO "Error minor work queue\n");
       }
       the_object = objects + minor;
-      printk(KERN_INFO "Get the_object eseguita\n");
        if (session -> blocking) 
        {
          //mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
@@ -128,19 +125,19 @@ static void workqueue_writefn(struct work_struct* work)
           printk("Timeout expired\n");
         }
 
-        printk(KERN_INFO "Preso lock\n");
+        printk(KERN_INFO "Wait event executed in workqueue function\n");
        } else{
          
          ret = mutex_trylock(&(the_object->lp_operation_synchronizer));
          if (ret == EBUSY){
            printk("Lock busy\n");
          }
-         printk(KERN_INFO "Preso lock\n");
+         printk(KERN_INFO "Got trylock\n");
        }
   
  
   offset += the_object -> low_prior_valid_bytes;
-  printk(KERN_DEBUG "aggiorna offset eseguita: %lld\n", device -> off);
+  printk(KERN_DEBUG "Offset before writing: %lld\n", device -> off);
 
   if (offset >= OBJECT_MAX_SIZE)
   { // offset too large
@@ -161,11 +158,12 @@ static void workqueue_writefn(struct work_struct* work)
 
  
   strncat(the_object -> low_prior_stream_content,buff, len);
-  printk(KERN_INFO "Contenuto scritto: %s, con offset: %lld\n", the_object->low_prior_stream_content, offset);
+  printk(KERN_INFO "String content: %s, with offset: %lld\n", the_object->low_prior_stream_content, offset);
 
   offset += len;
   the_object->low_prior_valid_bytes = offset;
   num_byte_lp[minor] += len;
+  printk(KERN_INFO "Valid bytes low prior: %d\n", the_object->low_prior_valid_bytes);
   free_page((unsigned long)(device ->buffer));
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
@@ -186,7 +184,7 @@ static int dev_open(struct inode *inode, struct file *file)
   minor = get_minor(file);
 
   file -> private_data = (session_struct*) kzalloc(sizeof(session_struct), GFP_KERNEL);
-  ((session_struct*) (file->private_data))-> timeout = 0;
+  ((session_struct*) (file->private_data))-> timeout = 1;
   ((session_struct*) (file->private_data)) -> blocking = 0;
   ((session_struct*) (file->private_data)) -> is_in_high_prior = 0;
 
@@ -201,7 +199,6 @@ static int dev_open(struct inode *inode, struct file *file)
   }
 
   printk("%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
-  // device opened by a default nop
   return 0;
 }
 
@@ -213,7 +210,6 @@ static int dev_release(struct inode *inode, struct file *file)
   kfree(file -> private_data);
 
   printk("%s: device file closed\n", MODNAME);
-  // device closed by default nop
   return 0;
 }
 //sincroni per hp e asincrono per lp
@@ -240,11 +236,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if(packed_work_sched == NULL){
     return -ENOSPC;
   }
-  printk("%s: work buffer allocation success - address is %p\n",MODNAME,packed_work_sched);
-  
   printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n",MODNAME,get_major(filp),get_minor(filp));
 
-  if (session->blocking) //TODO: fare i 4 casi blocking vs non-blocking e prior vs non-prior
+  if (session->blocking) 
   { 
     if(prior){
       //caso con waitqueue
@@ -488,16 +482,18 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
   if (session->is_in_high_prior)
   { 
-    char* buffer_tmp;
-    char *p;
+    //char* buffer_tmp;
+    //char *p;
     //logica: salva in un buff tampone la residua stringa, azzera buf e poi copia residua in buf
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
-    buffer_tmp = kzalloc((strlen(the_object->high_prior_stream_content)) - (len-ret), GFP_KERNEL);
-    p = the_object->high_prior_stream_content + (len - ret);
-    strncpy(buffer_tmp,p, strlen(p));
-    memset(the_object->high_prior_stream_content,0,strlen(the_object->high_prior_stream_content));
-    strncpy(the_object->high_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
-    kfree(buffer_tmp);
+    //buffer_tmp = kzalloc((strlen(the_object->high_prior_stream_content)) - (len-ret), GFP_KERNEL);
+    //p = the_object->high_prior_stream_content + (len - ret);
+    //strncpy(buffer_tmp,p, strlen(p));
+    memmove(the_object->high_prior_stream_content, (the_object->high_prior_stream_content) + (len-ret),(the_object->high_prior_valid_bytes) - (len-ret));
+    memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes - len - ret),0,len-ret);
+    //memset(the_object->high_prior_stream_content,0,strlen(the_object->high_prior_stream_content));
+    //strncpy(the_object->high_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
+    //kfree(buffer_tmp);
     num_byte_hp[minor] -= (len - ret);
     
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len-ret);
@@ -506,21 +502,24 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     the_object -> high_prior_valid_bytes -= (len - ret);
   }
   else{
-    char* buffer_tmp;
-    char* p;
+    //char* buffer_tmp;
+    //char* p;
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
-    buffer_tmp = kzalloc((strlen(the_object->low_prior_stream_content)) - (len-ret), GFP_KERNEL);
-    p = the_object->low_prior_stream_content + (len - ret);
-    strncpy(buffer_tmp,p, strlen(p));
-    memset(the_object->low_prior_stream_content,0,strlen(the_object->low_prior_stream_content));
-    strncpy(the_object->low_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
+    //buffer_tmp = kzalloc((strlen(the_object->low_prior_stream_content)) - (len-ret), GFP_KERNEL);
+    //p = the_object->low_prior_stream_content + (len - ret);
+    //strncpy(buffer_tmp,p, strlen(p));
+
+    memmove(the_object->low_prior_stream_content, (the_object->low_prior_stream_content) + (len-ret),(the_object->low_prior_valid_bytes) - (len-ret));
+    memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes - len - ret),0,len-ret);
+
+    //memset(the_object->low_prior_stream_content,0,strlen(the_object->low_prior_stream_content));
+    //strncpy(the_object->low_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
 
 
     num_byte_lp[minor] -= (len - ret);
-    printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
-    memset(the_object->low_prior_stream_content,0,len-ret);
-    printk("Stream dopo memset: %s\n", the_object->low_prior_stream_content);
-    the_object->low_prior_stream_content += (len - ret); //prova cancellazione contenuto
+    //printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
+    //memset(the_object->low_prior_stream_content,0,len-ret);
+    //printk("Stream dopo memset: %s\n", the_object->low_prior_stream_content);
     the_object -> low_prior_valid_bytes -= (len - ret);
   }
 
