@@ -27,9 +27,9 @@ void * the_thread_write(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 1;
+	int32_t sec = 0;
 	ioctl(fd,HP_B,(int32_t*) &sec);
-	for(i=0;i<5;i++) write(fd,DATA,SIZE);
+	write(fd,DATA,SIZE);
 	close(fd);
 	return NULL;
 

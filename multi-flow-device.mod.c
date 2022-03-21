@@ -37,9 +37,9 @@ __used __section(__versions) = {
 	{ 0xb0e602eb, "memmove" },
 	{ 0xb44ad4b3, "_copy_to_user" },
 	{ 0xc5b6f236, "queue_work_on" },
-	{ 0x6a5cb5ee, "__get_free_pages" },
 	{ 0x362ef408, "_copy_from_user" },
 	{ 0x88db9f48, "__check_object_size" },
+	{ 0x6a5cb5ee, "__get_free_pages" },
 	{ 0x56470118, "__warn_printk" },
 	{ 0xdecd0b29, "__stack_chk_fail" },
 	{ 0x8ddd8aad, "schedule_timeout" },
@@ -62,4 +62,4 @@ __used __section(__versions) = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "7E03411DD027B321FB4ACD8");
+MODULE_INFO(srcversion, "D722982BFAE779070C14692");

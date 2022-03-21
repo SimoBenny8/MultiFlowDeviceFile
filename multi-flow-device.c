@@ -389,13 +389,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   {
     the_object->high_prior_valid_bytes = *off;
     num_byte_hp[minor] += (len - ret);
-    printk("Stream high priority contains: %s with valid bytes %ld\n",the_object->high_prior_stream_content, the_object->high_prior_valid_bytes);
+    printk("Stream high priority contains: %s with valid bytes %d\n",the_object->high_prior_stream_content, the_object->high_prior_valid_bytes);
   }
   else
   {
     the_object->low_prior_valid_bytes = *off;
     num_byte_lp[minor] += (len - ret);
-    printk("Stream low priority contains: %s with valid bytes %ld\n",the_object->low_prior_stream_content, the_object->low_prior_valid_bytes);
+    printk("Stream low priority contains: %s with valid bytes %d\n",the_object->low_prior_stream_content, the_object->low_prior_valid_bytes);
   }
 
   if (prior)
@@ -508,44 +508,31 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
   if (session->is_in_high_prior)
   {
-    // char* buffer_tmp;
-    // char *p;
-    // logica: salva in un buff tampone la residua stringa, azzera buf e poi copia residua in buf
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[0]), len);
-    // buffer_tmp = kzalloc((strlen(the_object->high_prior_stream_content)) - (len-ret), GFP_KERNEL);
-    // p = the_object->high_prior_stream_content + (len - ret);
-    // strncpy(buffer_tmp,p, strlen(p));
+   
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len - ret);
     memmove(the_object->high_prior_stream_content, (the_object->high_prior_stream_content) + (len - ret), (the_object->high_prior_valid_bytes) - (len - ret));
     memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes - len - ret), 0, len - ret);
-    // memset(the_object->high_prior_stream_content,0,strlen(the_object->high_prior_stream_content));
-    // strncpy(the_object->high_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
-    // kfree(buffer_tmp);
-    printk("Stream dopo memset: %s, con byte validi: %ld\n", the_object->high_prior_stream_content,the_object->high_prior_valid_bytes);
+    
     num_byte_hp[minor] -= (len - ret);
 
     the_object->high_prior_valid_bytes -= (len - ret);
+    printk("Stream dopo memset: %s, con byte validi: %d\n", the_object->high_prior_stream_content,the_object->high_prior_valid_bytes);
+    
   }
   else
   {
-    // char* buffer_tmp;
-    // char* p;
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[0]), len);
-    // buffer_tmp = kzalloc((strlen(the_object->low_prior_stream_content)) - (len-ret), GFP_KERNEL);
-    // p = the_object->low_prior_stream_content + (len - ret);
-    // strncpy(buffer_tmp,p, strlen(p));
+  
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
     memmove(the_object->low_prior_stream_content, (the_object->low_prior_stream_content) + (len - ret), (the_object->low_prior_valid_bytes) - (len - ret));
     memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes - len - ret), 0, len - ret);
 
-    // memset(the_object->low_prior_stream_content,0,strlen(the_object->low_prior_stream_content));
-    // strncpy(the_object->low_prior_stream_content,buffer_tmp,strlen(buffer_tmp));
-    printk("Stream dopo memset: %s, con byte validi: %ld\n", the_object->low_prior_stream_content,the_object->low_prior_valid_bytes);
     num_byte_lp[minor] -= (len - ret);
-    // 
-    // memset(the_object->low_prior_stream_content,0,len-ret);
-    // printk("Stream dopo memset: %s\n", the_object->low_prior_stream_content);
+    
     the_object->low_prior_valid_bytes -= (len - ret);
+    printk("Stream dopo memset: %s, con byte validi: %d\n", the_object->low_prior_stream_content,the_object->low_prior_valid_bytes);
+    
   }
 
   *off += (len - ret);
@@ -609,9 +596,11 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
     {
       printk("Device with minor %d  is set to enable", minor);
     }
-    else
+    else if(status[minor] == 0)
     {
       printk("Device with minor %d  is set to disable", minor);
+    }else{
+      printk("Parameter not valid");
     }
     break;
   }
