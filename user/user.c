@@ -27,7 +27,7 @@ void * the_thread_write(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 0;
+	int32_t sec = 1;
 	ioctl(fd,HP_B,(int32_t*) &sec);
 	write(fd,DATA,SIZE);
 	close(fd);
@@ -57,6 +57,36 @@ void * the_thread_read(void* path){
 	printf("device %s successfully opened\n",device);
 	int32_t sec = 0;
 	ioctl(fd,HP_B,(int32_t*) &sec);
+	read(fd, buffer, 2);
+    printf("buffer: %s", buffer);    
+    
+	close(fd);
+	return NULL;
+
+}
+
+void * the_thread_disable_device(void* path){
+
+	char* device;
+	int fd,retval;
+	char *buffer = malloc(4096);
+
+	if(buffer == NULL){
+		printf("Error alloc buffer\n");
+		return NULL;
+	}
+
+	device = (char*)path;
+
+	printf("opening device %s\n",device);
+	fd = open(device,O_RDWR|O_APPEND);
+	if(fd == -1) {
+		printf("open error on device %s\n",device);
+		return NULL;
+	}
+	printf("device %s successfully opened\n",device);
+	int32_t sec = 0;
+	ioctl(fd,EN_DIS,(int32_t*) &sec);
 	read(fd, buffer, 2);
     printf("buffer: %s", buffer);    
     

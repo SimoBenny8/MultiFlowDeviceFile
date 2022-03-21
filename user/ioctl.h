@@ -13,4 +13,6 @@
 #define LP_NB _IOWR(IOCTL_APP_TYPE,3,int32_t*)
 #define LP_B _IOWR(IOCTL_APP_TYPE,4,int32_t*)
 
+#define EN_DIS _IOWR(IOCTL_APP_TYPE,5,int32_t*)
+
 #endif
