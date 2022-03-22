@@ -516,7 +516,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
   if (session->is_in_high_prior)
   {
-    ret = copy_to_user(buff, &(the_object->high_prior_stream_content[0]), len);
+    ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
    
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len - ret);
     memmove(the_object->high_prior_stream_content, (the_object->high_prior_stream_content) + (len - ret), (the_object->high_prior_valid_bytes) - (len - ret));
@@ -530,7 +530,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   }
   else
   {
-    ret = copy_to_user(buff, &(the_object->low_prior_stream_content[0]), len);
+    ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
   
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
     memmove(the_object->low_prior_stream_content, (the_object->low_prior_stream_content) + (len - ret), (the_object->low_prior_valid_bytes) - (len - ret));
