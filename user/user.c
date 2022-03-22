@@ -85,10 +85,10 @@ void * the_thread_disable_device(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 0;
-	ioctl(fd,EN_DIS,(int32_t*) &sec);
-	read(fd, buffer, 2);
-    printf("buffer: %s", buffer);    
+	int sec = 0;
+	ioctl(fd,EN_DIS,&sec);
+	//read(fd, buffer, 2);
+    //printf("buffer: %s", buffer);    
     
 	close(fd);
 	return NULL;

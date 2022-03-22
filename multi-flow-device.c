@@ -127,6 +127,9 @@ static void workqueue_writefn(struct work_struct *work)
     {
       printk("Timeout expired\n");
     }
+    if(!mutex_is_locked(&(the_object->lp_operation_synchronizer))) { //if nobody call wake up..
+           wake_up(&(the_object->lp_queue)); //Wake up the waiting thread on the high prio stream
+    }
 
     printk(KERN_INFO "Wait event executed in workqueue function\n");
   }
@@ -255,6 +258,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         printk("Timeout expired\n");
         return -ETIMEDOUT;
       }
+      if(!mutex_is_locked(&(the_object->hp_operation_synchronizer))) { //if nobody call wake up..
+           wake_up(&(the_object->hp_queue)); //Wake up the waiting thread on the high prio stream
+      }
     }
     else
     {
@@ -290,15 +296,13 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   {
     if (prior)
     {
-      // caso con waitqueue
       printk(KERN_INFO "Case Non Blocking with priority\n");
-      atomic_fetch_add(&num_th_in_queue_hp[minor], 1);
-      ret_wq = wait_event_timeout(the_object->hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session->timeout);
-      atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
-      if (!ret_wq)
+      ret = mutex_trylock(&(the_object->hp_operation_synchronizer));
+     
+      if (!ret)
       {
-        printk("Timeout expired\n");
-        return -ETIMEDOUT;
+        printk("Busy lock\n");
+        return -EBUSY;
       }
     }
     else
@@ -331,6 +335,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     
   }
 
+  *off = 0;
+
   if (prior)
   {
     *off += the_object->high_prior_valid_bytes;
@@ -346,12 +352,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if (prior)
     {
       mutex_unlock(&(the_object->hp_operation_synchronizer));
-      wake_up_interruptible(&the_object->hp_queue);
+      wake_up(&the_object->hp_queue);
     }
     else
     {
       mutex_unlock(&(the_object->lp_operation_synchronizer));
-      wake_up_interruptible(&the_object->lp_queue);
+      wake_up(&the_object->lp_queue);
     }
     return -ENOSPC; // no space left on device
   }
@@ -360,18 +366,17 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if (prior)
     {
       mutex_unlock(&(the_object->hp_operation_synchronizer));
-      wake_up_interruptible(&the_object->hp_queue);
+      wake_up(&the_object->hp_queue);
     }
     else
     {
       mutex_unlock(&(the_object->lp_operation_synchronizer));
-      wake_up_interruptible(&the_object->lp_queue);
+      wake_up(&the_object->lp_queue);
     }
     return -ENOSR; // out of stream resources
   }
 
-  if ((OBJECT_MAX_SIZE - *off) < len)
-    len = OBJECT_MAX_SIZE - *off;
+  if ((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
 
   if (session->is_in_high_prior)
   {
@@ -401,18 +406,17 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   if (prior)
   {
     mutex_unlock(&(the_object->hp_operation_synchronizer));
-    wake_up_interruptible(&the_object->hp_queue);
+    wake_up(&the_object->hp_queue);
   }
   else
   {
     mutex_unlock(&(the_object->lp_operation_synchronizer));
-    wake_up_interruptible(&the_object->lp_queue);
+    wake_up(&the_object->lp_queue);
   }
   printk(KERN_INFO "Finisched write\n");
   return len - ret;
 }
 
-// TODO: controllare se read viene chiamata prima della write (per questo non legge)
 static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 {
 
@@ -428,7 +432,6 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   session = filp->private_data;
 
   prior = session->is_in_high_prior;
-  //printk("%s: somebody called a read on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 
   if (session->blocking)
   {
@@ -443,6 +446,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
         printk("Timeout wait queue Read op expired\n");
         return -ETIMEDOUT;
       }
+      if(!mutex_is_locked(&(the_object->hp_operation_synchronizer))) { //if nobody call wake up..
+           wake_up(&(the_object->hp_queue)); //Wake up the waiting thread on the high prio stream
+      }
     }
     else
     {
@@ -455,6 +461,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
         printk("Timeout wait queue Read op expired\n");
         return -ETIMEDOUT;
       }
+      if(!mutex_is_locked(&(the_object->lp_operation_synchronizer))) { //if nobody call wake up..
+           wake_up(&(the_object->lp_queue)); //Wake up the waiting thread on the high prio stream
+      }
     }
   }
   else
@@ -462,8 +471,8 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     if (prior)
     {
       printk(KERN_INFO " Read case Non Blocking with priority\n");
-      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer)); // controllare EBUSY
-      if (ret_mutex == EBUSY)
+      ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));
+      if (!ret_mutex)
       {
         return -EBUSY;
       }
@@ -473,28 +482,27 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       printk(KERN_INFO " Read case Non Blocking with non priority\n");
       ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer));
 
-      if (ret_mutex == EBUSY)
+      if (!ret_mutex)
       {
         return -EBUSY;
       }
     }
   }
-  if (((!session->is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (session->is_in_high_prior && *off > the_object->high_prior_valid_bytes))
+  *off = 0;
+  if ((session->is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   {
-    if (prior)
-    {
       mutex_unlock(&(the_object->hp_operation_synchronizer));
-      wake_up_interruptible(&the_object->hp_queue);
-    }
-    else
-    {
+      wake_up(&the_object->hp_queue);
+      return 0;
+  
+  }else if((!session->is_in_high_prior) && *off > the_object->low_prior_valid_bytes){
+      
       mutex_unlock(&(the_object->lp_operation_synchronizer));
-      wake_up_interruptible(&the_object->lp_queue);
-    }
-
-    return 0;
+      wake_up(&the_object->lp_queue);
+      return 0;
   }
 
+    
   if (((!session->is_in_high_prior) && (the_object->low_prior_valid_bytes - *off) < len))
   {
 
@@ -535,16 +543,15 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     
   }
 
-  *off += (len - ret);
   if (prior)
   {
     mutex_unlock(&(the_object->hp_operation_synchronizer));
-    wake_up_interruptible(&the_object->hp_queue);
+    wake_up(&the_object->hp_queue);
   }
   else
   {
     mutex_unlock(&(the_object->lp_operation_synchronizer));
-    wake_up_interruptible(&the_object->lp_queue);
+    wake_up(&the_object->lp_queue);
   }
 
   return len - ret;
