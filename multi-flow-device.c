@@ -120,7 +120,7 @@ static void workqueue_writefn(struct work_struct *work)
   {
     // mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
     atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
-    ret = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ) * (session->timeout));
+    ret = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000) * (session->timeout)); ///* (HZ/1000) = 1 millisecond in jiffies */
     atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
     // num_th_in_queue_hp[minor] += 1;
     if (!ret)
@@ -251,7 +251,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       printk(KERN_INFO "Case Blocking with priority\n");
 
       atomic_fetch_add(&num_th_in_queue_hp[minor], 1);
-      ret_wq = wait_event_timeout(the_object->hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session->timeout);
+      ret_wq = wait_event_timeout(the_object->hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ/1000)*session->timeout);
       atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
       if (!ret_wq)
       {
@@ -439,7 +439,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     {
       printk(KERN_INFO " Read Case Blocking with priority\n");
       atomic_fetch_add(&num_th_in_queue_hp[minor], 1);
-      ret_wq = wait_event_timeout(the_object->hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ)*session->timeout);
+      ret_wq = wait_event_timeout(the_object->hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ/1000)*session->timeout);
       atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
       if (!ret_wq)
       {
@@ -454,7 +454,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     {
       printk(KERN_INFO " Read case Blocking with no priority\n");
       atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
-      ret_wq = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ)*session->timeout);
+      ret_wq = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000)*session->timeout);
       atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
       if (!ret_wq)
       {
