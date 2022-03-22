@@ -88,8 +88,6 @@ module_param_array(num_byte_lp, int, NULL, S_IRUSR | S_IWUSR);
 module_param_array(num_th_in_queue_hp, int, NULL, S_IRUSR | S_IWUSR);
 module_param_array(num_th_in_queue_lp, int, NULL, S_IRUSR | S_IWUSR);
 
-#define OBJECT_MAX_SIZE (4096) 
-
 static void workqueue_writefn(struct work_struct *work)
 {
 
@@ -118,11 +116,9 @@ static void workqueue_writefn(struct work_struct *work)
   the_object = objects + minor;
   if (session->blocking)
   {
-    // mutex_lock_interruptible(&(the_object->lp_operation_synchronizer));
     atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
     ret = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000) * (session->timeout)); ///* (HZ/1000) = 1 millisecond in jiffies */
     atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
-    // num_th_in_queue_hp[minor] += 1;
     if (!ret)
     {
       printk("Timeout expired\n");
@@ -143,28 +139,21 @@ static void workqueue_writefn(struct work_struct *work)
     }
     printk(KERN_INFO "Got trylock\n");
   }
-
+  offset = 0;
   offset += the_object->low_prior_valid_bytes;
   printk(KERN_DEBUG "Offset before writing: %lld\n", device->off);
 
-  if (offset >= OBJECT_MAX_SIZE)
-  { // offset too large
-    free_page((unsigned long)(device->buffer));
-    kfree(device);
-    mutex_unlock(&(the_object->lp_operation_synchronizer));
-    wake_up(&(the_object->lp_queue));
-  }
+ 
   if ((offset > the_object->low_prior_valid_bytes))
   { // offset beyond the current stream size
-    free_page((unsigned long)(device->buffer));
+    kfree(device->buffer);
     kfree(device);
     mutex_unlock(&(the_object->lp_operation_synchronizer));
     wake_up(&(the_object->lp_queue));
   }
 
-  if ((OBJECT_MAX_SIZE - offset) < len)
-    len = OBJECT_MAX_SIZE - (offset);
-
+  the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content,(the_object->low_prior_valid_bytes)+len,GFP_KERNEL);
+  memset(the_object->low_prior_stream_content + the_object->low_prior_valid_bytes,0,len);
   strncat(the_object->low_prior_stream_content, buff, len);
   printk(KERN_INFO "String content: %s, with offset: %lld\n", the_object->low_prior_stream_content, offset);
 
@@ -172,7 +161,7 @@ static void workqueue_writefn(struct work_struct *work)
   the_object->low_prior_valid_bytes = offset;
   num_byte_lp[minor] += len;
   printk(KERN_INFO "Valid bytes low prior: %d\n", the_object->low_prior_valid_bytes);
-  free_page((unsigned long)(device->buffer));
+  kfree(device->buffer);
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   wake_up(&(the_object->lp_queue));
@@ -188,7 +177,7 @@ static int dev_open(struct inode *inode, struct file *file)
   minor = get_minor(file);
 
   file->private_data = (session_struct *)kzalloc(sizeof(session_struct), GFP_KERNEL);
-  ((session_struct *)(file->private_data))->timeout = 1;
+  ((session_struct *)(file->private_data))->timeout = 10; //milliseconds
   ((session_struct *)(file->private_data))->blocking = 0;
   ((session_struct *)(file->private_data))->is_in_high_prior = 0;
 
@@ -198,7 +187,6 @@ static int dev_open(struct inode *inode, struct file *file)
   }
   if (status[minor] == 0)
   {
-
     printk("Device disabled \n");
     return -1;
   }
@@ -266,7 +254,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     {
       // caso deferred work
       printk(KERN_INFO "Case Blocking with non priority\n");
-      packed_work_sched->buffer = (char *)__get_free_page(GFP_KERNEL);
+      packed_work_sched->buffer = (char *)kzalloc(len*sizeof(char), GFP_KERNEL);
       ret = copy_from_user(packed_work_sched->buffer, buff, len);
       if (ret == (int)len)
       {
@@ -308,7 +296,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     else
     {
       printk(KERN_INFO "Case Non Blocking with non priority\n");
-      packed_work_sched->buffer = (char *)__get_free_page(GFP_KERNEL);
+      packed_work_sched-> buffer = (char *)kzalloc(len*sizeof(char), GFP_KERNEL);
       ret = copy_from_user(packed_work_sched->buffer, buff, len);
       if (ret == len)
       {
@@ -346,21 +334,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     *off += the_object->low_prior_valid_bytes;
   }
 
-  if (*off >= OBJECT_MAX_SIZE)
-  { // offset too large
-
-    if (prior)
-    {
-      mutex_unlock(&(the_object->hp_operation_synchronizer));
-      wake_up(&the_object->hp_queue);
-    }
-    else
-    {
-      mutex_unlock(&(the_object->lp_operation_synchronizer));
-      wake_up(&the_object->lp_queue);
-    }
-    return -ENOSPC; // no space left on device
-  }
   if (((!session->is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (session->is_in_high_prior && *off > the_object->high_prior_valid_bytes))
   { // offset beyond the current stream size
     if (prior)
@@ -376,16 +349,18 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     return -ENOSR; // out of stream resources
   }
 
-  if ((OBJECT_MAX_SIZE - *off) < len) len = OBJECT_MAX_SIZE - *off;
 
   if (session->is_in_high_prior)
   {
+    the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes+len, GFP_KERNEL);
+    memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes), 0, len);
     ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
   }
   else
   {
+    the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content, the_object->low_prior_valid_bytes+len, GFP_KERNEL);
+    memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes), 0, len);
     ret = copy_from_user(&(the_object->low_prior_stream_content[*off]), buff, len);
-  
   }
 
   *off += (len - ret);
@@ -514,6 +489,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     len = the_object->high_prior_valid_bytes - *off;
   }
 
+  if(len > the_object->high_prior_valid_bytes && prior) len = the_object->high_prior_valid_bytes;
+
+  if(len > the_object->low_prior_valid_bytes && !prior) len = the_object->low_prior_valid_bytes;  
+
   if (session->is_in_high_prior)
   {
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
@@ -521,6 +500,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len - ret);
     memmove(the_object->high_prior_stream_content, (the_object->high_prior_stream_content) + (len - ret), (the_object->high_prior_valid_bytes) - (len - ret));
     memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes - len - ret), 0, len - ret);
+    if(len != 0){
+      the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, (the_object->high_prior_valid_bytes) - (len - ret), GFP_KERNEL);
+    }
     
     num_byte_hp[minor] -= (len - ret);
 
@@ -535,6 +517,10 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
     memmove(the_object->low_prior_stream_content, (the_object->low_prior_stream_content) + (len - ret), (the_object->low_prior_valid_bytes) - (len - ret));
     memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes - len - ret), 0, len - ret);
+
+    if(len != 0){
+      the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content, (the_object->low_prior_valid_bytes) - (len - ret), GFP_KERNEL);
+    }
 
     num_byte_lp[minor] -= (len - ret);
     
@@ -559,7 +545,6 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
 static long dev_ioctl(struct file *filp, unsigned int command, unsigned long param)
 {
-  // aggiungere gestione sessione chiusa
   int minor = get_minor(filp);
   object_state *the_object;
   session_struct *session = filp->private_data;
@@ -647,9 +632,9 @@ int init_module(void)
     objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;
-    objects[i].low_prior_stream_content = (char *)__get_free_page(GFP_KERNEL);
+    objects[i].low_prior_stream_content = (char *)kzalloc(1, GFP_KERNEL);
     objects[i].high_prior_stream_content = NULL;
-    objects[i].high_prior_stream_content = (char *)__get_free_page(GFP_KERNEL);
+    objects[i].high_prior_stream_content = (char *)kzalloc(1, GFP_KERNEL);
     if (objects[i].high_prior_stream_content == NULL || objects[i].low_prior_stream_content == NULL)
       goto revert_allocation;
   }
@@ -671,8 +656,8 @@ revert_allocation:
   for (; i >= 0; i--)
   {
     destroy_workqueue(objects[i].lp_workqueue);
-    free_page((unsigned long)objects[i].low_prior_stream_content);
-    free_page((unsigned long)objects[i].high_prior_stream_content);
+    kfree(objects[i].low_prior_stream_content);
+    kfree(objects[i].high_prior_stream_content);
   }
   return -ENOMEM;
 }
@@ -684,8 +669,8 @@ void cleanup_module(void)
   for (i = 0; i < MINORS; i++)
   {
     destroy_workqueue(objects[i].lp_workqueue);
-    free_page((unsigned long)objects[i].low_prior_stream_content);
-    free_page((unsigned long)objects[i].high_prior_stream_content);
+    kfree(objects[i].low_prior_stream_content);
+    kfree(objects[i].high_prior_stream_content);
   }
 
   unregister_chrdev(Major, DEVICE_NAME);
