@@ -26,8 +26,8 @@ void * the_thread_write(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t ms = 100;
-	ioctl(fd,HP_B,(int32_t*) &ms);
+	int ms = 100;
+	ioctl(fd,HP_B,ms);
 	for(int i= 0; i<5; i++) write(fd,DATA,SIZE);
 	close(fd);
 	return NULL;
@@ -54,8 +54,8 @@ void * the_thread_read(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t ms = 50;
-	ioctl(fd,HP_B,(int32_t*) &ms);
+	int ms = 50;
+	ioctl(fd,HP_B, ms);
 	int ret = read(fd, buffer, 5);
 	if (ret != 0){
 		printf("buffer read: %s\n", buffer);  
@@ -70,12 +70,7 @@ void * the_thread_disable_device(void* path){
 
 	char* device;
 	int fd,retval;
-	char *buffer = malloc(4096);
-
-	if(buffer == NULL){
-		printf("Error alloc buffer\n");
-		return NULL;
-	}
+	
 
 	device = (char*)path;
 
@@ -87,9 +82,7 @@ void * the_thread_disable_device(void* path){
 	}
 	printf("device %s successfully opened\n",device);
 	int dis = 0;
-	ioctl(fd,EN_DIS,&dis);
-	//read(fd, buffer, 2);
-    //printf("buffer: %s", buffer);    
+	ioctl(fd,EN_DIS,dis); 
     
 	close(fd);
 	return NULL;
@@ -106,8 +99,8 @@ int main(int argc, char** argv){
      pthread_t tid;
 
      if(argc<4){
-	printf("useg: prog pathname major minors\n");
-	return -1;
+		printf("useg: prog pathname major minors\n");
+		return -1;
      }
 
      path = argv[1];
@@ -120,11 +113,10 @@ int main(int argc, char** argv){
 		system(buff);
 		sprintf(buff,"%s%d",path,i);
 		//pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-		pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		pthread_create(&tid,NULL,the_thread_disable_device,strdup(buff));
      }
-	
-
-     pause();
-     return 0;
+	pause();
+    return 0;
 
 }

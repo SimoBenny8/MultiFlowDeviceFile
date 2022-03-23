@@ -70,7 +70,7 @@ typedef struct _session_struct
 {
   int is_in_high_prior;
   int blocking;
-  int32_t timeout;
+  int timeout;
 } session_struct;
 
 #define MINORS 128
@@ -527,40 +527,40 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
   case HP_B:
     session->is_in_high_prior = 1;
     session->blocking = 1;
-    session->timeout = (int32_t)param;
+    session->timeout = (int)param;
     printk("Inserimento parametri HP_B effettuato\n");
     break;
 
   case HP_NB:
     session->is_in_high_prior = 1;
     session->blocking = 0;
-    session->timeout = (int32_t)param;
+    session->timeout = (int)param;
     printk("Inserimento parametri HP_NB effettuato\n");
     break;
 
   case LP_NB:
     session->is_in_high_prior = 0;
     session->blocking = 0;
-    session->timeout = (int32_t)param;
+    session->timeout = (int)param;
     printk("Inserimento parametri LP_NB effettuato\n");
     break;
 
   case LP_B:
     session->is_in_high_prior = 0;
     session->blocking = 1;
-    session->timeout = (int32_t)param;
+    session->timeout = (int)param;
     printk("Inserimento parametri LP_B effettuato\n");
     break;
 
   case EN_DIS:
-    status[minor] = (int)param;
-    if (status[minor] == 1)
+    if(param == 0){
+      printk("Device with minor %d  is set to disable", minor);
+      status[minor] = (int)param;
+    }
+    else if (param == 1)
     {
       printk("Device with minor %d  is set to enable", minor);
-    }
-    else if(status[minor] == 0)
-    {
-      printk("Device with minor %d  is set to disable", minor);
+      status[minor] = (int)param;
     }else{
       printk("Parameter not valid");
     }
@@ -576,7 +576,8 @@ static struct file_operations fops = {
     .read = dev_read,
     .open = dev_open,
     .release = dev_release,
-    .unlocked_ioctl = dev_ioctl};
+    .unlocked_ioctl = dev_ioctl
+};
 
 int init_module(void)
 {
