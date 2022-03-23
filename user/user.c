@@ -13,23 +13,42 @@ char buff[4096];
 #define DATA "Hello"
 #define SIZE strlen(DATA)
 
-void * the_thread_write(void* path){
+void * the_thread_write_and_read(void* path){
 
 	char* device;
 	int fd;
-
+	
+	char* msg1 = "Hello";
+	char* msg2 = "World";
 	device = (char*)path;
 
-	printf("opening device %s\n",device);
+	printf("Opening device %s\n",device);
 	fd = open(device,O_RDWR|O_APPEND);
 	if(fd == -1) {
 		printf("open error on device %s\n",device);
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int ms = 100;
+	int ms = 50;
 	ioctl(fd,HP_B,ms);
-	for(int i= 0; i<5; i++) write(fd,DATA,SIZE);
+	write(fd,msg1,sizeof(msg1));
+	write(fd,msg2,sizeof(msg2));
+
+	char* buffer = malloc(4);
+	int ret = read(fd, buffer, sizeof(msg1));
+	if (ret != 0){
+		printf("First read: %s\n", buffer);  
+	}
+	free(buffer);
+
+	char* buffer = malloc(5);
+	int ret = read(fd, buffer, sizeof(msg2));
+	if (ret != 0){
+		printf("Second read: %s\n", buffer);  
+	}
+	free(buffer);
+	
+
 	close(fd);
 	return NULL;
 
@@ -100,7 +119,7 @@ int main(int argc, char** argv){
      pthread_t tid;
 
      if(argc<4){
-		printf("useg: prog pathname major minors\n");
+		printf("usage: prog pathname major minors\n");
 		return -1;
      }
 
