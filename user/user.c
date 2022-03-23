@@ -9,7 +9,7 @@
 
 int i;
 char buff[4096];
-#define DATA "ciao"
+#define DATA "Hello"
 #define SIZE strlen(DATA)
 
 void * the_thread_write(void* path){

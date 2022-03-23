@@ -317,7 +317,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         return -EALREADY;
       }
       printk(KERN_INFO "%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-      return 0; // scegliere codice di errore per questo caso
+      return 0; 
     }
     
   }
