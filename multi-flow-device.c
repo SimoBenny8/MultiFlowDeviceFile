@@ -118,7 +118,7 @@ static void workqueue_writefn(struct work_struct *work)
   {
     atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
     ret = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000) * (session->timeout)); ///* (HZ/1000) = 1 millisecond in jiffies */
-    atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
+    atomic_fetch_sub(&num_th_in_queue_lp[minor], 1);
     if (!ret)
     {
       printk("Timeout expired\n");
@@ -400,7 +400,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
       printk(KERN_INFO " Read case Blocking with no priority\n");
       atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
       ret_wq = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000)*session->timeout);
-      atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
+      atomic_fetch_sub(&num_th_in_queue_lp[minor], 1);
       if (!ret_wq)
       {
         printk("Timeout wait queue Read op expired\n");
