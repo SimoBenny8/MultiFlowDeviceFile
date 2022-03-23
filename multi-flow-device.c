@@ -121,7 +121,7 @@ static void workqueue_writefn(struct work_struct *work)
     atomic_fetch_sub(&num_th_in_queue_lp[minor], 1);
     if (!ret)
     {
-      printk("Timeout expired\n");
+      printk(KERN_INFO "Timeout expired\n");
     }
     if(!mutex_is_locked(&(the_object->lp_operation_synchronizer))) { //if nobody call wake up..
            wake_up(&(the_object->lp_queue)); //Wake up the waiting thread on the high prio stream
@@ -135,7 +135,7 @@ static void workqueue_writefn(struct work_struct *work)
     ret = mutex_trylock(&(the_object->lp_operation_synchronizer));
     if (!ret)
     {
-      printk("Lock busy\n");
+      printk(KERN_INFO "Lock busy\n");
     }
     printk(KERN_INFO "Got trylock\n");
   }
@@ -155,17 +155,17 @@ static void workqueue_writefn(struct work_struct *work)
   the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content,(the_object->low_prior_valid_bytes)+len,GFP_KERNEL);
   memset(the_object->low_prior_stream_content + the_object->low_prior_valid_bytes,0,len);
   strncat(the_object->low_prior_stream_content, buff, len);
-  printk(KERN_INFO "String content: %s, with offset: %lld\n", the_object->low_prior_stream_content, offset);
+  
 
   offset += len;
   the_object->low_prior_valid_bytes = offset;
   num_byte_lp[minor] += len;
+  printk(KERN_INFO "String content: %s, with offset: %lld\n", the_object->low_prior_stream_content, offset);
   printk(KERN_INFO "Valid bytes low prior: %d\n", the_object->low_prior_valid_bytes);
   kfree(device->buffer);
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
   wake_up(&(the_object->lp_queue));
-  printk(KERN_INFO "Finished Workqueue Function\n");
 }
 
 /* the actual driver */
@@ -187,11 +187,11 @@ static int dev_open(struct inode *inode, struct file *file)
   }
   if (status[minor] == 0)
   {
-    printk("Device disabled \n");
+    printk(KERN_INFO "Device disabled \n");
     return -1;
   }
 
-  printk("%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
+  printk(KERN_INFO "%s: device file successfully opened for object with minor %d\n", MODNAME, minor);
   return 0;
 }
 
@@ -202,7 +202,7 @@ static int dev_release(struct inode *inode, struct file *file)
   minor = get_minor(file);
   kfree(file->private_data);
 
-  printk("%s: device file closed\n", MODNAME);
+  printk(KERN_INFO "%s: device file closed\n", MODNAME);
   return 0;
 }
 // sincroni per hp e asincrono per lp
@@ -229,13 +229,11 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   {
     return -ENOSPC;
   }
-  //printk("%s: somebody called a write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
 
   if (session->blocking)
   {
     if (prior)
     {
-      // caso con waitqueue
       printk(KERN_INFO "Case Blocking with priority\n");
 
       atomic_fetch_add(&num_th_in_queue_hp[minor], 1);
@@ -243,7 +241,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
       if (!ret_wq)
       {
-        printk("Timeout expired\n");
+        printk(KERN_INFO "Timeout expired\n");
         return -ETIMEDOUT;
       }
       if(!mutex_is_locked(&(the_object->hp_operation_synchronizer))) { //if nobody call wake up..
@@ -252,7 +250,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     }
     else
     {
-      // caso deferred work
       printk(KERN_INFO "Case Blocking with non priority\n");
       packed_work_sched->buffer = (char *)kzalloc(len*sizeof(char), GFP_KERNEL);
       ret = copy_from_user(packed_work_sched->buffer, buff, len);
@@ -276,8 +273,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       {
         return -EALREADY;
       }
-      printk("%s: somebody called a blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-      return -2;
+      printk(KERN_INFO "%s: somebody called a blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
+      return 0;
     }
 
     
@@ -291,14 +288,14 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
      
       if (!ret)
       {
-        printk("Busy lock\n");
+        printk(KERN_INFO "Busy lock\n");
         return -EBUSY;
       }
     }
     else
     {
       printk(KERN_INFO "Case Non Blocking with non priority\n");
-      packed_work_sched-> buffer = (char *)kzalloc(len*sizeof(char), GFP_KERNEL);
+      packed_work_sched-> buffer = (char *)kzalloc(len, GFP_KERNEL);
       ret = copy_from_user(packed_work_sched->buffer, buff, len);
       if (ret == len)
       {
@@ -319,8 +316,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       {
         return -EALREADY;
       }
-      printk("%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-      return -2; // scegliere codice di errore per questo caso
+      printk(KERN_INFO "%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
+      return 0; // scegliere codice di errore per questo caso
     }
     
   }
@@ -351,14 +348,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   
   the_object->high_prior_valid_bytes = *off;
   num_byte_hp[minor] += (len - ret);
-  printk("Stream high priority contains: %s with valid bytes %d\n",the_object->high_prior_stream_content, the_object->high_prior_valid_bytes);
+  printk(KERN_INFO "Stream high priority contains: %s with valid bytes %d\n",the_object->high_prior_stream_content, the_object->high_prior_valid_bytes);
   
   
   mutex_unlock(&(the_object->hp_operation_synchronizer));
   wake_up(&the_object->hp_queue);
   
-  
-  printk(KERN_INFO "Finisched HP write\n");
   return len - ret;
 }
 
@@ -382,13 +377,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if (prior)
     {
-      printk(KERN_INFO " Read Case Blocking with priority\n");
+      printk(KERN_INFO "Read Case Blocking with priority\n");
       atomic_fetch_add(&num_th_in_queue_hp[minor], 1);
       ret_wq = wait_event_timeout(the_object->hp_queue, mutex_trylock(&(the_object->hp_operation_synchronizer)), (HZ/1000)*session->timeout);
       atomic_fetch_sub(&num_th_in_queue_hp[minor], 1);
       if (!ret_wq)
       {
-        printk("Timeout wait queue Read op expired\n");
+        printk(KERN_INFO "Timeout wait queue Read op expired\n");
         return -ETIMEDOUT;
       }
       if(!mutex_is_locked(&(the_object->hp_operation_synchronizer))) { //if nobody call wake up..
@@ -397,13 +392,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     }
     else
     {
-      printk(KERN_INFO " Read case Blocking with no priority\n");
+      printk(KERN_INFO "Read case Blocking with no priority\n");
       atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
       ret_wq = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000)*session->timeout);
       atomic_fetch_sub(&num_th_in_queue_lp[minor], 1);
       if (!ret_wq)
       {
-        printk("Timeout wait queue Read op expired\n");
+        printk(KERN_INFO "Timeout wait queue Read op expired\n");
         return -ETIMEDOUT;
       }
       if(!mutex_is_locked(&(the_object->lp_operation_synchronizer))) { //if nobody call wake up..
@@ -415,7 +410,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     if (prior)
     {
-      printk(KERN_INFO " Read case Non Blocking with priority\n");
+      printk(KERN_INFO "Read case Non Blocking with priority\n");
       ret_mutex = mutex_trylock(&(the_object->hp_operation_synchronizer));
       if (!ret_mutex)
       {
@@ -424,7 +419,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     }
     else
     {
-      printk(KERN_INFO " Read case Non Blocking with non priority\n");
+      printk(KERN_INFO "Read case Non Blocking with non priority\n");
       ret_mutex = mutex_trylock(&(the_object->lp_operation_synchronizer));
 
       if (!ret_mutex)
@@ -466,8 +461,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   if (session->is_in_high_prior)
   {
     ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
-   
-    printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->high_prior_stream_content, len - ret);
+  
     memmove(the_object->high_prior_stream_content, (the_object->high_prior_stream_content) + (len - ret), (the_object->high_prior_valid_bytes) - (len - ret));
     memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes - len - ret), 0, len - ret);
     if(len != 0){
@@ -477,14 +471,13 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     num_byte_hp[minor] -= (len - ret);
 
     the_object->high_prior_valid_bytes -= (len - ret);
-    printk("Stream dopo memset: %s, con byte validi: %d\n", the_object->high_prior_stream_content,the_object->high_prior_valid_bytes);
+    printk(KERN_INFO "Stream after read operation: %s, with number of bytes read: %d\n", the_object->high_prior_stream_content,the_object->high_prior_valid_bytes);
     
   }
   else
   {
     ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
-  
-    printk("Stream prima di memset: %s, con byte letti: %ld\n", the_object->low_prior_stream_content, len-ret);
+
     memmove(the_object->low_prior_stream_content, (the_object->low_prior_stream_content) + (len - ret), (the_object->low_prior_valid_bytes) - (len - ret));
     memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes - len - ret), 0, len - ret);
 
@@ -495,7 +488,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     num_byte_lp[minor] -= (len - ret);
     
     the_object->low_prior_valid_bytes -= (len - ret);
-    printk("Stream dopo memset: %s, con byte validi: %d\n", the_object->low_prior_stream_content,the_object->low_prior_valid_bytes);
+    printk(KERN_INFO "Stream after read operation: %s, with number of bytes read: %d\n", the_object->low_prior_stream_content,the_object->low_prior_valid_bytes);
     
   }
 
@@ -520,7 +513,7 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
   session_struct *session = filp->private_data;
 
   the_object = objects + minor;
-  printk("%s: somebody called an ioctl on dev with [major,minor] number [%d,%d] and command %u \n", MODNAME, get_major(filp), get_minor(filp), command);
+  printk(KERN_INFO "%s: somebody called an ioctl on dev with [major,minor] number [%d,%d] and command %u \n", MODNAME, get_major(filp), get_minor(filp), command);
 
   switch (command)
   {
@@ -528,41 +521,41 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
     session->is_in_high_prior = 1;
     session->blocking = 1;
     session->timeout = (int)param;
-    printk("Inserimento parametri HP_B effettuato\n");
+    printk(KERN_INFO "Added High Priority Blocking Case parameters\n");
     break;
 
   case HP_NB:
     session->is_in_high_prior = 1;
     session->blocking = 0;
     session->timeout = (int)param;
-    printk("Inserimento parametri HP_NB effettuato\n");
+    printk(KERN_INFO "Added High Priority Non Blocking Case parameters\n");
     break;
 
   case LP_NB:
     session->is_in_high_prior = 0;
     session->blocking = 0;
     session->timeout = (int)param;
-    printk("Inserimento parametri LP_NB effettuato\n");
+    printk(KERN_INFO "Added Low Priority Non Blocking Case parameters\n");
     break;
 
   case LP_B:
     session->is_in_high_prior = 0;
     session->blocking = 1;
     session->timeout = (int)param;
-    printk("Inserimento parametri LP_B effettuato\n");
+    printk(KERN_INFO "Added Low Priority Blocking Case parameters\n");
     break;
 
   case EN_DIS:
     if(param == 0){
-      printk("Device with minor %d  is set to disable", minor);
+      printk(KERN_INFO "Device with minor %d  is set to disable\n", minor);
       status[minor] = (int)param;
     }
     else if (param == 1)
     {
-      printk("Device with minor %d  is set to enable", minor);
+      printk(KERN_INFO "Device with minor %d  is set to enable\n", minor);
       status[minor] = (int)param;
     }else{
-      printk("Parameter not valid");
+      printk(KERN_INFO "Parameter not valid\n");
     }
     break;
   }
@@ -598,7 +591,7 @@ int init_module(void)
     objects[i].lp_workqueue = create_singlethread_workqueue("wq");
     if (!objects[i].lp_workqueue)
     {
-      printk("create workqueue failed\n");
+      printk(KERN_INFO "Create workqueue failed\n");
     }
     objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
@@ -615,7 +608,7 @@ int init_module(void)
 
   if (Major < 0)
   {
-    printk("%s: registering device failed\n", MODNAME);
+    printk(KERN_INFO "%s: registering device failed\n", MODNAME);
     return Major;
   }
 
