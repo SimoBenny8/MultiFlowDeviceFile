@@ -26,7 +26,7 @@ void * the_thread_write(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t ms = 50;
+	int32_t ms = 100;
 	ioctl(fd,HP_B,(int32_t*) &ms);
 	for(int i= 0; i<5; i++) write(fd,DATA,SIZE);
 	close(fd);
@@ -60,6 +60,7 @@ void * the_thread_read(void* path){
 	if (ret != 0){
 		printf("buffer read: %s\n", buffer);  
 	}
+	free(buffer);
 	close(fd);
 	return NULL;
 
@@ -118,9 +119,10 @@ int main(int argc, char** argv){
 		sprintf(buff,"mknod %s%d c %d %i\n",path,i,major,i);
 		system(buff);
 		sprintf(buff,"%s%d",path,i);
-		pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-		//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		//pthread_create(&tid,NULL,the_thread_write,strdup(buff));
+		pthread_create(&tid,NULL,the_thread_read,strdup(buff));
      }
+	
 
      pause();
      return 0;
