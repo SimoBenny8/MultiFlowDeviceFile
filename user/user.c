@@ -9,6 +9,7 @@
 
 int i;
 char buff[4096];
+#define PATH "/dev/multiflowdev"
 #define DATA "Hello"
 #define SIZE strlen(DATA)
 
