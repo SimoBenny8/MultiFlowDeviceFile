@@ -18,7 +18,6 @@ void * the_thread_write(void* path){
 	int fd;
 
 	device = (char*)path;
-	sleep(1);
 
 	printf("opening device %s\n",device);
 	fd = open(device,O_RDWR|O_APPEND);
@@ -27,9 +26,9 @@ void * the_thread_write(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 1;
-	ioctl(fd,HP_B,(int32_t*) &sec);
-	write(fd,DATA,SIZE);
+	int32_t ms = 50;
+	ioctl(fd,HP_B,(int32_t*) &ms);
+	for(int i= 0; i<5; i++) write(fd,DATA,SIZE);
 	close(fd);
 	return NULL;
 
@@ -39,7 +38,7 @@ void * the_thread_read(void* path){
 
 	char* device;
 	int fd,retval;
-	char *buffer = malloc(4096);
+	char *buffer = malloc(5);
 
 	if(buffer == NULL){
 		printf("Error alloc buffer\n");
@@ -55,11 +54,12 @@ void * the_thread_read(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int32_t sec = 0;
-	ioctl(fd,HP_B,(int32_t*) &sec);
-	read(fd, buffer, 2);
-    printf("buffer: %s", buffer);    
-    
+	int32_t ms = 50;
+	ioctl(fd,HP_B,(int32_t*) &ms);
+	int ret = read(fd, buffer, 5);
+	if (ret != 0){
+		printf("buffer read: %s\n", buffer);  
+	}
 	close(fd);
 	return NULL;
 
@@ -85,8 +85,8 @@ void * the_thread_disable_device(void* path){
 		return NULL;
 	}
 	printf("device %s successfully opened\n",device);
-	int sec = 0;
-	ioctl(fd,EN_DIS,&sec);
+	int dis = 0;
+	ioctl(fd,EN_DIS,&dis);
 	//read(fd, buffer, 2);
     //printf("buffer: %s", buffer);    
     
@@ -118,8 +118,8 @@ int main(int argc, char** argv){
 		sprintf(buff,"mknod %s%d c %d %i\n",path,i,major,i);
 		system(buff);
 		sprintf(buff,"%s%d",path,i);
-		//pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-		pthread_create(&tid,NULL,the_thread_read,strdup(buff));
+		pthread_create(&tid,NULL,the_thread_write,strdup(buff));
+		//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
      }
 
      pause();

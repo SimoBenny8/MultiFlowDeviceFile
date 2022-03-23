@@ -133,7 +133,7 @@ static void workqueue_writefn(struct work_struct *work)
   {
 
     ret = mutex_trylock(&(the_object->lp_operation_synchronizer));
-    if (ret == EBUSY)
+    if (!ret)
     {
       printk("Lock busy\n");
     }
@@ -259,10 +259,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       if (ret == (int)len)
       {
         return -ENOBUFS;
+      }else if (ret > 0){
+        packed_work_sched->buffer = krealloc(packed_work_sched->buffer, len - ret, GFP_KERNEL);
       }
 
       packed_work_sched->filp = filp;
-      packed_work_sched->len = len;
+      packed_work_sched->len = len - ret;
       packed_work_sched->off = *off;
 
       INIT_WORK(&(packed_work_sched->the_work), workqueue_writefn);
@@ -304,7 +306,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
       }
 
       packed_work_sched->filp = filp;
-      packed_work_sched->len = len;
+      packed_work_sched->len = len - ret;
       packed_work_sched->off = *off;
 
       INIT_WORK(&(packed_work_sched->the_work), workqueue_writefn);
@@ -324,71 +326,39 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   }
 
   *off = 0;
-
-  if (prior)
-  {
-    *off += the_object->high_prior_valid_bytes;
-  }
-  else
-  {
-    *off += the_object->low_prior_valid_bytes;
-  }
-
-  if (((!session->is_in_high_prior) && *off > the_object->low_prior_valid_bytes) || (session->is_in_high_prior && *off > the_object->high_prior_valid_bytes))
+  *off += the_object->high_prior_valid_bytes;
+  
+  if ((*off > the_object->high_prior_valid_bytes))
   { // offset beyond the current stream size
-    if (prior)
-    {
-      mutex_unlock(&(the_object->hp_operation_synchronizer));
-      wake_up(&the_object->hp_queue);
-    }
-    else
-    {
-      mutex_unlock(&(the_object->lp_operation_synchronizer));
-      wake_up(&the_object->lp_queue);
-    }
+    mutex_unlock(&(the_object->hp_operation_synchronizer));
+    wake_up(&the_object->hp_queue);
+    
     return -ENOSR; // out of stream resources
   }
 
 
-  if (session->is_in_high_prior)
-  {
-    the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes+len, GFP_KERNEL);
-    memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes), 0, len);
-    ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
+  
+  the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes+len, GFP_KERNEL);
+  memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes), 0, len);
+  ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
+  if(ret != 0){
+    the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes - ret, GFP_KERNEL);
   }
-  else
-  {
-    the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content, the_object->low_prior_valid_bytes+len, GFP_KERNEL);
-    memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes), 0, len);
-    ret = copy_from_user(&(the_object->low_prior_stream_content[*off]), buff, len);
-  }
+  
 
   *off += (len - ret);
 
-  if (prior)
-  {
-    the_object->high_prior_valid_bytes = *off;
-    num_byte_hp[minor] += (len - ret);
-    printk("Stream high priority contains: %s with valid bytes %d\n",the_object->high_prior_stream_content, the_object->high_prior_valid_bytes);
-  }
-  else
-  {
-    the_object->low_prior_valid_bytes = *off;
-    num_byte_lp[minor] += (len - ret);
-    printk("Stream low priority contains: %s with valid bytes %d\n",the_object->low_prior_stream_content, the_object->low_prior_valid_bytes);
-  }
-
-  if (prior)
-  {
-    mutex_unlock(&(the_object->hp_operation_synchronizer));
-    wake_up(&the_object->hp_queue);
-  }
-  else
-  {
-    mutex_unlock(&(the_object->lp_operation_synchronizer));
-    wake_up(&the_object->lp_queue);
-  }
-  printk(KERN_INFO "Finisched write\n");
+  
+  the_object->high_prior_valid_bytes = *off;
+  num_byte_hp[minor] += (len - ret);
+  printk("Stream high priority contains: %s with valid bytes %d\n",the_object->high_prior_stream_content, the_object->high_prior_valid_bytes);
+  
+  
+  mutex_unlock(&(the_object->hp_operation_synchronizer));
+  wake_up(&the_object->hp_queue);
+  
+  
+  printk(KERN_INFO "Finisched HP write\n");
   return len - ret;
 }
 
