@@ -18,8 +18,8 @@ int main(int argc, char** argv){
 	 char* msg;
 	 int fd;
 
-     if(argc<6){
-		printf("Usage: Prog Pathname Major HighVsLow BlockVsNonBlock Message\n");
+     if(argc<5){
+		printf("Usage: Prog Major HighVsLow BlockVsNonBlock Message\n");
 		printf("Values: High = 1\n");
 		printf("Values: Low = 0\n");
 		printf("Values: Block = 1\n");
@@ -37,9 +37,11 @@ int main(int argc, char** argv){
 	system(buff);
 	sprintf(buff,"%s%d",PATH,0);
 	fd = open(buff,O_RDWR|O_APPEND);
+	
 	if (fd < 0) {
 		printf("Could not open device\n");
 	}
+	printf("Opened device\n");
 	int ms = 100;
 	if (ioctl_value1 == 1 && ioctl_value2 == 1){
 		ioctl(fd,HP_B,ms);
@@ -55,6 +57,7 @@ int main(int argc, char** argv){
 	}
 	
 	write(fd, msg, strlen(msg));
+	printf("Write done!\n");
 
 	if (close(fd) < 0) {
 		printf("Could not close\n");
