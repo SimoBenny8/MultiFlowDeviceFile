@@ -17,7 +17,6 @@ void * the_thread_read(void* path){
 	char* device;
 	int ret;
 	int fd;
-	int ret;
 	char* msg;
 	device = (char*)path;
 
