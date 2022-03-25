@@ -228,7 +228,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
 
   if(prior){
     //copy to temp buffer
-    temp_buffer = (char* )kzalloc(len*sizeof(char), GFP_ATOMIC);
+    temp_buffer = (char* )kzalloc(len, GFP_ATOMIC);
     if (temp_buffer == NULL) return -ENOMEM;
     ret = copy_from_user(temp_buffer,buff,len);
     printk("First copy to temp buffer done with total bytes: %ld\n", len - ret);
@@ -264,7 +264,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     else
     {
       printk(KERN_INFO "Case Blocking with non priority\n");
-      packed_work_sched->buffer = (char *)kzalloc(len*sizeof(char), GFP_KERNEL);
+      packed_work_sched->buffer = (char *)kzalloc(len, GFP_KERNEL);
       ret = copy_from_user(packed_work_sched->buffer, buff, len);
       if (ret == (int)len)
       {
@@ -351,12 +351,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes+len, GFP_KERNEL);
   memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes), 0, len);
   strncat(the_object->high_prior_stream_content, temp_buffer, len);
-  //ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
-  
-  /*if(ret != 0){
-    the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes - ret, GFP_KERNEL);
-  }*/
-  
 
   *off += (len - ret);
 
@@ -381,6 +375,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   int prior;
   int ret_mutex;
   int ret_wq;
+  char* temp_buff;
   object_state *the_object;
   session_struct *session;
 
@@ -388,6 +383,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   session = filp->private_data;
 
   prior = session->is_in_high_prior;
+  temp_buff = (char*)kzalloc(len, GFP_ATOMIC);
 
   if (session->blocking)
   {
@@ -476,13 +472,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
 
   if (session->is_in_high_prior)
   {
-    ret = copy_to_user(buff, &(the_object->high_prior_stream_content[*off]), len);
-  
+    strncpy(temp_buff,&(the_object->high_prior_stream_content[*off]),len);
     memmove(the_object->high_prior_stream_content, (the_object->high_prior_stream_content) + (len - ret), (the_object->high_prior_valid_bytes) - (len - ret));
     memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes - len - ret), 0, len - ret);
-    if(len != 0){
-      the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, (the_object->high_prior_valid_bytes) - (len - ret), GFP_KERNEL);
-    }
     
     num_byte_hp[minor] -= (len - ret);
 
@@ -492,14 +484,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   }
   else
   {
-    ret = copy_to_user(buff, &(the_object->low_prior_stream_content[*off]), len);
-
+    strncpy(temp_buff,&(the_object->low_prior_stream_content[*off]),len);
     memmove(the_object->low_prior_stream_content, (the_object->low_prior_stream_content) + (len - ret), (the_object->low_prior_valid_bytes) - (len - ret));
     memset(the_object->low_prior_stream_content + (the_object->low_prior_valid_bytes - len - ret), 0, len - ret);
-
-    if(len != 0){
-      the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content, (the_object->low_prior_valid_bytes) - (len - ret), GFP_KERNEL);
-    }
 
     num_byte_lp[minor] -= (len - ret);
     
@@ -512,6 +499,7 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     mutex_unlock(&(the_object->hp_operation_synchronizer));
     wake_up(&the_object->hp_queue);
+
   }
   else
   {
@@ -519,6 +507,9 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
     wake_up(&the_object->lp_queue);
   }
 
+  ret = copy_to_user(buff, temp_buff, len);
+
+  kfree(temp_buff);
   return len - ret;
 }
 
