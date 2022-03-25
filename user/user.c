@@ -62,17 +62,28 @@ void * the_thread_disable_device(void* path){
 
 	device = (char*)path;
 
-	printf("opening device %s\n",device);
+	//printf("opening device %s\n",device);
 	fd = open(device,O_RDWR|O_APPEND);
 	if(fd == -1) {
 		printf("open error on device %s\n",device);
 		return NULL;
 	}
-	printf("device %s successfully opened\n",device);
 	int dis = 0;
-	ioctl(fd,EN_DIS,dis); 
-    
-	close(fd);
+	ioctl(fd,EN_DIS,dis);
+	close(fd); 
+
+	//Second try
+	fd = open(device,O_RDWR|O_APPEND);
+	if(fd == -1) {
+		printf("open error on device %s\n",device);
+		ioctl(fd,HP_B,10);
+		retval = write(fd, DATA,SIZE); //not valid if disable
+		if(retval == -1){
+			printf("Write doesn't work\n");
+		}
+		return NULL;
+	}
+	//printf("device %s successfully opened\n",device);
 	return NULL;
 
 }
@@ -99,8 +110,8 @@ int main(int argc, char** argv){
 		sprintf(buff,"mknod %s%d c %d %i\n",PATH,i,major,i);
 		system(buff);
 		sprintf(buff,"%s%d",PATH,i);
-		//pthread_create(&tid,NULL,the_thread_disable_device,strdup(buff));
-		pthread_create(&tid,NULL,the_thread_write_and_read,strdup(buff));
+		pthread_create(&tid,NULL,the_thread_disable_device,strdup(buff));
+		//pthread_create(&tid,NULL,the_thread_write_and_read,strdup(buff));
      }
 	pause();
     return 0;

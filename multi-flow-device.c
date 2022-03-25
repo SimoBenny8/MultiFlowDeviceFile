@@ -216,6 +216,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   int ret_queue;
   packed_work *packed_work_sched;
   session_struct *session;
+  char* temp_buffer;
 
   object_state *the_object;
 
@@ -224,6 +225,18 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
   session = filp->private_data;
   prior = session->is_in_high_prior;
+
+  if(prior){
+    //copy to temp buffer
+    temp_buffer = (char* )kzalloc(len*sizeof(char), GFP_ATOMIC);
+    if (temp_buffer == NULL) return -ENOMEM;
+    ret = copy_from_user(temp_buffer,buff,len);
+    printk("First copy to temp buffer done with total bytes: %ld\n", len - ret);
+    if (ret == (int)len){
+        return -ENOBUFS;
+    }
+  }
+  
 
   if (packed_work_sched == NULL)
   {
@@ -337,10 +350,12 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   
   the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes+len, GFP_KERNEL);
   memset(the_object->high_prior_stream_content + (the_object->high_prior_valid_bytes), 0, len);
-  ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
-  if(ret != 0){
+  strncat(the_object->high_prior_stream_content, temp_buffer, len);
+  //ret = copy_from_user(&(the_object->high_prior_stream_content[*off]), buff, len);
+  
+  /*if(ret != 0){
     the_object->high_prior_stream_content = krealloc(the_object->high_prior_stream_content, the_object->high_prior_valid_bytes - ret, GFP_KERNEL);
-  }
+  }*/
   
 
   *off += (len - ret);
@@ -353,7 +368,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   
   mutex_unlock(&(the_object->hp_operation_synchronizer));
   wake_up(&the_object->hp_queue);
-  
+  kfree(temp_buffer);
+
   return len - ret;
 }
 
