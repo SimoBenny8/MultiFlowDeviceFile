@@ -223,6 +223,8 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   the_object = objects + minor;
 
   packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
+  if (packed_work_sched == NULL) return -ENOSPC;
+  
   session = filp->private_data;
   prior = session->is_in_high_prior;
 
@@ -235,12 +237,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
     if (ret == (int)len){
         return -ENOBUFS;
     }
-  }
-  
-
-  if (packed_work_sched == NULL)
-  {
-    return -ENOSPC;
   }
 
   if (session->blocking)
@@ -342,7 +338,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   { // offset beyond the current stream size
     mutex_unlock(&(the_object->hp_operation_synchronizer));
     wake_up(&the_object->hp_queue);
-    
+    kfree(temp_buffer);
     return -ENOSR; // out of stream resources
   }
 
@@ -362,6 +358,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   
   mutex_unlock(&(the_object->hp_operation_synchronizer));
   wake_up(&the_object->hp_queue);
+  
   kfree(temp_buffer);
 
   return len - ret;
@@ -445,12 +442,14 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
       mutex_unlock(&(the_object->hp_operation_synchronizer));
       wake_up(&the_object->hp_queue);
+      kfree(temp_buff);
       return 0;
   
   }else if((!session->is_in_high_prior) && *off > the_object->low_prior_valid_bytes){
       
       mutex_unlock(&(the_object->lp_operation_synchronizer));
       wake_up(&the_object->lp_queue);
+      kfree(temp_buff);
       return 0;
   }
 
@@ -499,12 +498,14 @@ static ssize_t dev_read(struct file *filp, char *buff, size_t len, loff_t *off)
   {
     mutex_unlock(&(the_object->hp_operation_synchronizer));
     wake_up(&the_object->hp_queue);
+    
 
   }
   else
   {
     mutex_unlock(&(the_object->lp_operation_synchronizer));
     wake_up(&the_object->lp_queue);
+    
   }
 
   ret = copy_to_user(buff, temp_buff, len);
