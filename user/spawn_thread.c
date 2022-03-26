@@ -97,7 +97,7 @@ int main(int argc, char** argv){
 		sprintf(buff,"%s%d",PATH,i);
 		for(j=0; j<numThreads;j++){
 			pthread_create(&tid,NULL,the_thread_write,strdup(buff));
-			//pthread_create(&tid,NULL,the_thread_write,strdup(buff));
+			//pthread_create(&tid,NULL,the_thread_read,strdup(buff));
 		}
 		
 	} 
