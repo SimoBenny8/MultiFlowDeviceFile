@@ -97,7 +97,7 @@ static void workqueue_writefn(struct work_struct *work)
   int len;
   char *buff;
   long long int offset;
-  int ret;
+  
 
   object_state *the_object;
   printk(KERN_INFO "Executing Workqueue Function\n");
