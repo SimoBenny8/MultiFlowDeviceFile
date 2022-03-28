@@ -98,7 +98,7 @@ static void workqueue_writefn(struct work_struct *work)
   char *buff;
   long long int offset;
   int ret;
-  // prendere lock e differenziare se bloccante o no
+
   object_state *the_object;
   printk(KERN_INFO "Executing Workqueue Function\n");
   device = (packed_work *)container_of(work, packed_work, the_work);
@@ -114,31 +114,10 @@ static void workqueue_writefn(struct work_struct *work)
     printk(KERN_INFO "Error minor work queue\n");
   }
   the_object = objects + minor;
-  if (session->blocking)
-  {
-    atomic_fetch_add(&num_th_in_queue_lp[minor], 1);
-    ret = wait_event_timeout(the_object->lp_queue, mutex_trylock(&(the_object->lp_operation_synchronizer)), (HZ/1000) * (session->timeout)); ///* (HZ/1000) = 1 millisecond in jiffies */
-    atomic_fetch_sub(&num_th_in_queue_lp[minor], 1);
-    if (!ret)
-    {
-      printk(KERN_INFO "Timeout expired\n");
-    }
-    if(!mutex_is_locked(&(the_object->lp_operation_synchronizer))) { //if nobody call wake up..
-           wake_up(&(the_object->lp_queue)); //Wake up the waiting thread on the high prio stream
-    }
-
-    printk(KERN_INFO "Wait event executed in workqueue function\n");
-  }
-  else
-  {
-
-    ret = mutex_trylock(&(the_object->lp_operation_synchronizer));
-    if (!ret)
-    {
-      printk(KERN_INFO "Lock busy\n");
-    }
-    printk(KERN_INFO "Got trylock\n");
-  }
+  
+  mutex_lock(&(the_object->lp_operation_synchronizer));
+  printk(KERN_INFO "Got lock\n");
+  
   offset = 0;
   offset += the_object->low_prior_valid_bytes;
   printk(KERN_DEBUG "Offset before writing: %lld\n", device->off);
@@ -149,7 +128,6 @@ static void workqueue_writefn(struct work_struct *work)
     kfree(device->buffer);
     kfree(device);
     mutex_unlock(&(the_object->lp_operation_synchronizer));
-    wake_up(&(the_object->lp_queue));
   }
 
   the_object->low_prior_stream_content = krealloc(the_object->low_prior_stream_content,(the_object->low_prior_valid_bytes)+len,GFP_KERNEL);
@@ -165,7 +143,6 @@ static void workqueue_writefn(struct work_struct *work)
   kfree(device->buffer);
   kfree(device);
   mutex_unlock(&(the_object->lp_operation_synchronizer));
-  wake_up(&(the_object->lp_queue));
 }
 
 /* the actual driver */
@@ -283,7 +260,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         return -EALREADY;
       }
       printk(KERN_INFO "%s: somebody called a blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-      return 0;
+      return len - ret;
     }
 
     
@@ -326,7 +303,7 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
         return -EALREADY;
       }
       printk(KERN_INFO "%s: somebody called a non-blocked write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
-      return 0; 
+      return len - ret;
     }
     
   }
