@@ -451,7 +451,7 @@ static long dev_ioctl(struct file *filp, unsigned int command, unsigned long par
 
   case LP_NB:
     session->is_in_high_prior = 0;
-    session->blocking = 0;
+    session->blocking = 0;//need for read operations
     session->timeout = (int)param;
     printk(KERN_INFO "Added Low Priority Non Blocking Case parameters\n");
     break;
@@ -514,9 +514,9 @@ int init_module(void)
     objects[i].low_prior_valid_bytes = 0;
     objects[i].high_prior_valid_bytes = 0;
     objects[i].low_prior_stream_content = NULL;
-    objects[i].low_prior_stream_content = (char *)kzalloc(1, GFP_KERNEL);
+    objects[i].low_prior_stream_content = (char *)kzalloc(0, GFP_KERNEL);
     objects[i].high_prior_stream_content = NULL;
-    objects[i].high_prior_stream_content = (char *)kzalloc(1, GFP_KERNEL);
+    objects[i].high_prior_stream_content = (char *)kzalloc(0, GFP_KERNEL);
     if (objects[i].high_prior_stream_content == NULL || objects[i].low_prior_stream_content == NULL)
       goto revert_allocation;
   }
