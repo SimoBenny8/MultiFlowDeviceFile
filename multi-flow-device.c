@@ -246,9 +246,6 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   object_state *the_object;
 
   the_object = objects + minor;
-
-  packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
-  if (packed_work_sched == NULL) return -ENOSPC;
   
   session = filp->private_data;
   prior = session->is_in_high_prior;
@@ -279,7 +276,9 @@ static ssize_t dev_write(struct file *filp, const char *buff, size_t len, loff_t
   }else{
 
     printk(KERN_INFO "Case low priority\n");
-     ret = call_deferred_work(minor,&(the_object->lp_workqueue),&filp,&off,&len,&buff,&packed_work_sched);
+    packed_work_sched = kzalloc(sizeof(packed_work), GFP_ATOMIC);
+    if (packed_work_sched == NULL) return -ENOSPC;
+    ret = call_deferred_work(minor,&(the_object->lp_workqueue),&filp,&off,&len,&buff,&packed_work_sched);
     
     printk(KERN_INFO "%s: somebody called a write on dev with [major,minor] number [%d,%d]\n", MODNAME, get_major(filp), get_minor(filp));
     return len - ret;
